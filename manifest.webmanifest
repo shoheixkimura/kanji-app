@@ -1,0 +1,14 @@
+{
+  "name": "かん字 かきとり",
+  "short_name": "かん字",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fff7ea",
+  "theme_color": "#fff7ea",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
