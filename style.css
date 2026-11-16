@@ -261,3 +261,62 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .rrow b { text-align: right; } .rrow > small { color: var(--sub); text-align: right; } .rrow.weak b { color: var(--ng); }
 .erow { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr 60px; align-items: center; gap: 12px; margin: 8px 0; }
 .erow span { font-weight: 700; } .erow span small { display: block; font-weight: 400; color: var(--sub); font-size: 12px; } .erow b { text-align: right; }
+
+/* ── カン君 ── */
+.kan { display: flex; align-items: flex-end; gap: 10px; text-align: left; }
+.kanchar { flex: none; width: 92px; animation: kanbob 2.6s ease-in-out infinite; }
+.kansvg { display: block; width: 100%; height: auto; }
+.kanbub { position: relative; background: #fff; border: 2px solid #34304a; border-radius: 18px; padding: 10px 14px; font-weight: 700; line-height: 1.45; margin-bottom: 14px; max-width: 30em; }
+.kanbub::before { content: ""; position: absolute; left: -9px; bottom: 16px; width: 14px; height: 14px; background: #fff; border-left: 2px solid #34304a; border-bottom: 2px solid #34304a; transform: rotate(45deg); }
+.kanbub b { display: block; font-size: 11px; color: #ff8a3d; letter-spacing: .08em; }
+.kan.sm .kanchar { width: 66px; } .kan.sm .kanbub { font-size: 16px; padding: 8px 12px; }
+.kan.mid { justify-content: center; margin: 14px 0; }
+.hero .kan { align-self: stretch; justify-content: center; }
+@keyframes kanbob { 50% { transform: translateY(-5px) rotate(-2deg); } }
+#kanbox { min-height: 84px; display: flex; justify-content: center; }
+.ktip { background: #fff7d6; border-radius: 12px; padding: 8px 12px; font-size: 15px; text-align: left; }
+
+/* ── かぞくランキング ── */
+.rtitle { font-size: 24px; margin-top: 10px; } .rtitle small { display: block; font-size: 13px; color: var(--sub); font-weight: 400; }
+.ranks { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+.rank { display: grid; grid-template-columns: 64px 64px 1fr auto auto; align-items: center; gap: 14px; text-align: left; background: var(--card); border: 2px solid var(--line); border-radius: 24px; padding: 12px 18px; box-shadow: 0 5px 0 var(--line); }
+.rank:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--line); }
+.rank.r1 { background: linear-gradient(120deg, #fff6c9, #ffe08a); border-color: #e9b93a; box-shadow: 0 5px 0 #e9b93a; padding: 18px; }
+.rank.r2 { background: linear-gradient(120deg, #f6f7fa, #e3e7ee); border-color: #c3cad6; box-shadow: 0 5px 0 #c3cad6; }
+.rank.r3 { background: linear-gradient(120deg, #fff1e6, #f6d3b8); border-color: #dba878; box-shadow: 0 5px 0 #dba878; }
+.rno { display: flex; align-items: baseline; justify-content: center; position: relative; font-weight: 900; }
+.rno i { position: absolute; top: -20px; font-style: normal; font-size: 22px; } .rno b { font-size: 40px; line-height: 1; } .rno small { font-size: 14px; }
+.rank.r1 .rno b { font-size: 52px; color: #b47a00; }
+.rav { font-size: 50px; line-height: 1; text-align: center; }
+.rmain { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.rname { font-size: 24px; font-weight: 800; } .rname small { font-size: 12px; font-weight: 400; color: var(--sub); margin-left: 8px; }
+.rbar { height: 10px; background: rgba(0, 0, 0, .08); border-radius: 99px; overflow: hidden; } .rbar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #ff8a3d, #f6b100); }
+.rnum { text-align: right; } .rnum b { font-size: 38px; line-height: 1; } .rnum small { display: block; font-size: 12px; color: var(--sub); }
+.rsub { display: flex; flex-direction: column; font-size: 13px; color: #5d574c; text-align: right; min-width: 6.5em; }
+@media (max-width: 620px) { .rank { grid-template-columns: 46px 46px 1fr auto; } .rsub { display: none; } .rav { font-size: 38px; } }
+
+/* ── おさいふ ── */
+.wallet { display: flex; align-items: baseline; gap: 10px; background: linear-gradient(120deg, #2b2a33, #4a4458); color: #ffe27a; border-radius: 22px; padding: 12px 22px; margin-bottom: 14px; }
+.wallet .wicon { font-size: 30px; } .wallet b { font-size: 44px; line-height: 1.1; font-variant-numeric: tabular-nums; } .wallet small { font-size: 16px; color: #fff; }
+.wallet .wtitle { margin-left: auto; background: rgba(255, 255, 255, .14); color: #fff; border-radius: 99px; padding: 4px 14px; font-size: 14px; font-weight: 700; align-self: center; }
+.chip.rankc { background: #fff6c9; border-color: #e9b93a; color: #8a5d00; }
+.tprize { font-weight: 800; color: #b47a00; background: #fff3c4; border-radius: 99px; padding: 4px 16px; margin-bottom: 10px; }
+.res .xp { color: #b47a00; }
+
+/* ── 1週間・学年べつ ステータス ── */
+.wsum { text-align: center; margin: -4px 0 14px; color: #5d574c; } .wsum b { font-size: 24px; color: var(--ink); margin: 0 2px; }
+.gst { margin: 6px 0 18px; } .gst:last-child { margin-bottom: 4px; }
+.seg { display: flex; height: 20px; border-radius: 99px; overflow: hidden; background: #f1eadb; margin: 6px 0; gap: 2px; }
+.seg i { display: block; min-width: 0; }
+.s-star { background: #f6b100; } .s-ok { background: #6fcf8c; } .s-learn { background: #ff9d8a; } .s-rest { background: #e9e2d2; }
+.gleg { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 14px; color: #5d574c; }
+.gleg i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 5px; } .gleg b { color: var(--ink); font-size: 16px; }
+
+/* ── 書き取りヘッダー ── */
+.pchip { background: var(--card); border: 2px solid var(--line); border-radius: 99px; padding: 3px 14px; font-weight: 800; white-space: nowrap; }
+.snd { font-size: 20px; width: 42px; height: 42px; border-radius: 50%; background: var(--card); border: 2px solid var(--line); position: relative; }
+.snd.off { opacity: .45; }
+.snd.off::after { content: ""; position: absolute; left: 6px; right: 6px; top: 50%; border-top: 3px solid var(--ng); transform: rotate(-40deg); }
+code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16px; -webkit-user-select: all; user-select: all; }
+@media (orientation: portrait) { #kanbox { min-height: 70px; } .kan.sm .kanchar { width: 54px; } }
+.rno i { top: -24px; left: -2px; } .rank.r1 .rno i { top: -28px; font-size: 26px; }

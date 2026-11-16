@@ -1,4 +1,8 @@
 import { samplePath, judge, pathLen } from './matcher.js';
+import { tone, audioCfg, setBgm, refreshBgm } from './audio.js';
+import { kanjiTip, mistakeTip } from './tips.js';
+import { kanSay } from './kan.js';
+import { cloudReady, pullAll, pushProfile, removeProfile } from './cloud.js';
 
 // ───────── 基本設定 ─────────
 const LS_KEY = 'kanjiapp.v1';
@@ -44,19 +48,26 @@ let P = null; // 現在のプロフィール
 function loadDB() {
   try {
     const d = JSON.parse(localStorage.getItem(LS_KEY));
-    if (d && Array.isArray(d.profiles)) return d;
+    if (d && Array.isArray(d.profiles)) { d.profiles.forEach(migrate); return d; }
   } catch { /* 初回 */ }
   return { v: 1, profiles: [], current: null, sound: true, pen: 'auto' };
 }
-function save() {
+/** 古い記録の形を今の形にそろえる（XP → ゼニー など） */
+function migrate(p) {
+  if (p.zeni == null) p.zeni = (p.xp || 0) * 10000;
+  p.cards = p.cards || {}; p.log = p.log || {}; p.trophies = p.trophies || {};
+  return p;
+}
+function saveLocal() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
   catch (e) { alert('きろくの ほぞんに しっぱいしました: ' + e.message); }
 }
+function save() { saveLocal(); schedulePush(); }
 function newProfile(name, avatar, grades) {
   return {
     id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     name, avatar, grades, daily: 10, limit: 10,
-    cards: {}, log: {}, trophies: {}, total: 0, session: null,
+    cards: {}, log: {}, trophies: {}, total: 0, zeni: 0, session: null, upd: Date.now(),
   };
 }
 
@@ -133,8 +144,8 @@ function streak(p) {
   return n;
 }
 function stats(p) {
-  const s = { passed: 0, mastered: 0, best: Infinity, total: p.total || 0, streak: streak(p), g: {}, rad: {}, pref: 0, big: 0, level: levelOf(p.xp || 0), cnt: p.cnt || {}, maxCombo: p.maxCombo || 0 };
-  for (const g of GRADES) s.g[g] = { passed: 0, mastered: 0, n: (GL[g] || []).length };
+  const s = { passed: 0, mastered: 0, best: Infinity, total: p.total || 0, streak: streak(p), g: {}, rad: {}, pref: 0, big: 0, zeni: p.zeni || 0, cnt: p.cnt || {}, maxCombo: p.maxCombo || 0 };
+  for (const g of GRADES) s.g[g] = { passed: 0, mastered: 0, ok: 0, learning: 0, n: (GL[g] || []).length };
   for (const [k, c] of Object.entries(p.cards)) {
     const g = KD[k] && KD[k].g; if (!g) continue;
     if (c.okc > 0) {
@@ -143,25 +154,29 @@ function stats(p) {
       if (PREF_KANJI.includes(k)) s.pref++;
       if (KD[k].s.length >= 15) s.big++;
     }
-    if (c.lv >= MASTER_LV) { s.mastered++; s.g[g].mastered++; }
+    if (c.lv >= MASTER_LV) { s.mastered++; s.g[g].mastered++; } else if (c.lv >= 1) s.g[g].ok++; else s.g[g].learning++;
     if (c.best != null && c.best < s.best) s.best = c.best;
   }
   return s;
 }
 
-// ───────── レベル（XP） ─────────
-const xpFor = (lv) => 30 * (lv - 1) * lv; // そのレベルに必要な累計XP
-const levelOf = (xp) => { let l = 1; while (xpFor(l + 1) <= xp) l++; return l; };
-const TITLES = [[1, 'かん字 みならい'], [3, 'かん字 ルーキー'], [5, 'かん字 ファイター'], [8, 'かん字 ハンター'], [12, 'かん字 はかせ'], [16, 'かん字 たつじん'], [20, 'かん字 マスター'], [30, 'かん字 レジェンド'], [40, 'かん字の 神さま']];
-const titleOf = (lv) => TITLES.filter((t) => t[0] <= lv).pop()[1];
-/** XPを足す。レベルが上がったらポップアップ用のデータを返す */
-function addXp(n) {
-  const b = levelOf(P.xp || 0);
-  P.xp = (P.xp || 0) + n;
-  const a = levelOf(P.xp);
-  save();
-  return a > b ? [{ icon: '🆙', label: 'レベルアップ！', name: `レベル ${a}`, desc: titleOf(a), big: a % 5 === 0 }] : [];
+// ───────── ゼニー（ごほうびのお金） ─────────
+/** 1234万、3億5000万 のように、千・万・億・兆を漢字で書く */
+function fmtZ(n) {
+  n = Math.max(0, Math.floor(n));
+  if (n < 1000) return String(n);
+  const cho = Math.floor(n / 1e12), oku = Math.floor((n % 1e12) / 1e8), man = Math.floor((n % 1e8) / 1e4), sen = Math.floor((n % 1e4) / 1000);
+  let s = '';
+  if (cho) s += cho.toLocaleString('ja-JP') + '兆';
+  if (oku) s += oku + '億';
+  if (man && !cho) s += man + '万';
+  if (!cho && !oku && man < 100 && sen) s += sen + '千';
+  return s;
 }
+const ZTITLES = [[0, 'かけだし'], [1e7, 'おこづかい長者'], [5e7, '小金もち'], [1e8, '億万長者'], [1e9, '大富豪'], [1e10, 'かん字財閥'], [1e11, 'でんせつの大王']];
+const ztitle = (z) => ZTITLES.filter((t) => t[0] <= z).pop()[1];
+const addZ = (n) => { P.zeni = (P.zeni || 0) + Math.round(n); };
+const prizeOf = (t) => (t.big ? 1e8 : t.secret ? 7770000 : 3000000);
 const bump = (key, n = 1) => { P.cnt = P.cnt || {}; P.cnt[key] = (P.cnt[key] || 0) + n; return P.cnt[key]; };
 
 // ───────── トロフィー ─────────
@@ -207,10 +222,10 @@ const TROPHIES = [
   { id: 'trace20', icon: '🖍️', name: 'なぞり しょくにん', desc: 'なぞり れんしゅうを 20回', ok: cnt('trace', 20) },
   { id: 'zukan10', icon: '🔍', name: 'ずかん たんけん', desc: 'ずかんから 10回 れんしゅう', ok: cnt('practice', 10) },
   { id: 'drill', icon: '🥊', name: 'にがて とっくん', desc: 'ぶんせきの とっくんを やりきる', ok: cnt('drill', 1) },
-  // レベル
-  { id: 'lv5', icon: '🎒', name: 'レベル5', desc: 'レベル5に なる', ok: (s) => s.level >= 5 },
-  { id: 'lv10', icon: '🎓', name: 'レベル10', desc: 'レベル10に なる', ok: (s) => s.level >= 10 },
-  { id: 'lv20', icon: '🧙', name: 'レベル20', desc: 'レベル20に なる', ok: (s) => s.level >= 20 },
+  // お金もち
+  { id: 'z1000', icon: '💰', name: '1000万ゼニー', desc: '1000万ゼニー ためる', ok: (s) => s.zeni >= 1e7 },
+  { id: 'z1oku', icon: '💎', name: '億万長者', desc: '1億ゼニー ためる', ok: (s) => s.zeni >= 1e8 },
+  { id: 'z10oku', icon: '🏰', name: '大富豪', desc: '10億ゼニー ためる', ok: (s) => s.zeni >= 1e9 },
   // コレクション
   { id: 'pref', icon: '🗾', name: '日本一しゅう', desc: '都道府県の字 20字を ぜんぶ ごうかく', grade: 4, ok: (s) => s.pref >= PREF_KANJI.length },
   { id: 'r-sui', icon: '💧', name: 'さんずい 水あそび', desc: '「氵」の字を 10字 ごうかく', ok: rad('氵', 10) },
@@ -236,29 +251,13 @@ const TROPHIES = [
 function checkTrophies(ctx = {}) {
   const s = stats(P), got = [];
   for (const t of TROPHIES) {
-    if (!P.trophies[t.id] && t.ok(s, ctx)) { P.trophies[t.id] = today(); got.push(t); }
+    if (!P.trophies[t.id] && t.ok(s, ctx)) { P.trophies[t.id] = today(); addZ(prizeOf(t)); got.push(t); }
   }
   if (got.length) save();
   return got;
 }
 
 // ───────── 効果音・演出 ─────────
-let AC = null;
-function tone(seq, type = 'triangle') {
-  if (!DB.sound) return;
-  try {
-    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
-    if (AC.state === 'suspended') AC.resume();
-    let t = AC.currentTime;
-    for (const [f, d] of seq) {
-      const o = AC.createOscillator(), g = AC.createGain();
-      o.type = type; o.frequency.value = f;
-      g.gain.setValueAtTime(0.16, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
-      o.connect(g).connect(AC.destination); o.start(t); o.stop(t + d);
-      t += d * 0.75;
-    }
-  } catch { /* 音が出せない環境 */ }
-}
 const SND = {
   stroke: (i = 0) => tone([[523 * 2 ** ((i % 15) / 12), 0.07]]),
   miss: () => tone([[160, 0.18]], 'sawtooth'),
@@ -293,10 +292,67 @@ function showTrophies(list, done) {
     <div class="ticon">${t.icon}</div>
     <div class="tname">${esc(t.name)}</div>
     <div class="tdesc">${esc(t.desc)}</div>
+    <div class="tprize">💰 しょうきん +${fmtZ(prizeOf(t))}ゼニー</div>
     <button class="btn primary">やったー！</button></div>`;
   document.body.appendChild(m);
   $('button', m).onclick = () => { m.remove(); showTrophies(list.slice(1), done); };
 }
+
+// ───────── クラウド同期 ─────────
+let syncing = false, pushTimer = null, inStudy = false, syncMsg = '', curView = null;
+const cloudOn = () => cloudReady() && !!DB.family;
+const pickCard = (a, b) => (!a ? b : !b ? a : a.n !== b.n ? (a.n > b.n ? a : b) : a.due >= b.due ? a : b);
+const keysOf = (x, y) => new Set([...Object.keys(x || {}), ...Object.keys(y || {})]);
+/** 2台の記録を合流させる。字ごとに「たくさん書いたほう」を採用する */
+function mergeProfile(a, b) {
+  const m = { ...((a.upd || 0) >= (b.upd || 0) ? a : b), cards: {}, log: {}, trophies: {}, cnt: {}, err: {} };
+  for (const k of keysOf(a.cards, b.cards)) m.cards[k] = pickCard((a.cards || {})[k], (b.cards || {})[k]);
+  for (const d of keysOf(a.log, b.log)) {
+    const x = (a.log || {})[d], y = (b.log || {})[d], w = !x ? y : !y ? x : x.n >= y.n ? x : y;
+    m.log[d] = { n: w.n, ok: w.ok };
+    if ((x && x.fin) || (y && y.fin)) m.log[d].fin = true;
+  }
+  for (const id of keysOf(a.trophies, b.trophies)) {
+    const x = (a.trophies || {})[id], y = (b.trophies || {})[id];
+    m.trophies[id] = !x ? y : !y ? x : x < y ? x : y;
+  }
+  for (const f of ['cnt', 'err']) for (const k of keysOf(a[f], b[f])) m[f][k] = Math.max((a[f] || {})[k] || 0, (b[f] || {})[k] || 0);
+  for (const f of ['total', 'zeni', 'maxCombo']) m[f] = Math.max(a[f] || 0, b[f] || 0);
+  const sa = a.session, sb = b.session;
+  m.session = !sa ? sb : !sb ? sa : sa.date !== sb.date ? (sa.date > sb.date ? sa : sb) : sa.pos >= sb.pos ? sa : sb;
+  return m;
+}
+async function syncNow() {
+  if (!cloudOn() || syncing || inStudy) return false;
+  syncing = true;
+  try {
+    const remote = await pullAll(DB.family), dead = DB.deleted || [], seen = {};
+    for (const r of remote) {
+      if (!r || !r.id) continue;
+      if (dead.includes(r.id)) { removeProfile(DB.family, r.id).catch(() => {}); continue; }
+      seen[r.id] = JSON.stringify(r);
+      const l = DB.profiles.find((p) => p.id === r.id);
+      if (l) Object.assign(l, mergeProfile(l, r)); else DB.profiles.push(migrate(r));
+    }
+    saveLocal();
+    for (const p of DB.profiles) if (JSON.stringify(p) !== seen[p.id]) await pushProfile(DB.family, p);
+    DB.lastSync = Date.now(); syncMsg = '';
+    saveLocal();
+    return true;
+  } catch (e) { syncMsg = e.message; return false; }
+  finally { syncing = false; }
+}
+function schedulePush() {
+  if (!cloudOn() || !P) return;
+  clearTimeout(pushTimer);
+  const p = P;
+  pushTimer = setTimeout(() => { pushProfile(DB.family, p).then(() => { syncMsg = ''; }).catch((e) => { syncMsg = e.message; }); }, 4000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { if (cloudOn() && P) { clearTimeout(pushTimer); pushProfile(DB.family, P).catch(() => {}); } }
+  else syncNow().then((ok) => { if (ok && (curView === viewProfiles || curView === viewHome)) go(curView); });
+});
+function applyAudio() { audioCfg.sfx = DB.sound !== false; audioCfg.bgm = DB.bgm !== false; refreshBgm(); }
 
 // ───────── 画面ルーティング ─────────
 let cleanup = null;
@@ -304,6 +360,7 @@ function go(render, ...args) {
   if (cleanup) { cleanup(); cleanup = null; }
   app.onclick = null; app.onchange = null;
   window.scrollTo(0, 0);
+  curView = render;
   render(...args);
 }
 function onAct(map) {
@@ -313,21 +370,29 @@ function onAct(map) {
   };
 }
 
-// ───────── プロフィール選択 ─────────
+// ───────── プロフィール選択（かぞくランキング） ─────────
+function ranking() {
+  return DB.profiles.map((p) => ({ p, s: stats(p) }))
+    .sort((a, b) => b.s.passed - a.s.passed || b.s.mastered - a.s.mastered || (b.p.zeni || 0) - (a.p.zeni || 0));
+}
 function viewProfiles() {
-  const list = DB.profiles.map((p) => {
-    const s = stats(p);
-    return `<button class="pcard" data-act="pick" data-id="${p.id}">
-      <span class="pav">${p.avatar}</span><span class="pname">${esc(p.name)}</span>
-      <span class="plv">Lv.${s.level}</span><span class="pmeta">🔥${s.streak}日　🏆${Object.keys(p.trophies).length}こ　${s.passed}字</span></button>`;
-  }).join('');
-  app.innerHTML = `<div class="page center">
+  const R = ranking(), top = Math.max(1, R.length ? R[0].s.passed : 0);
+  const rows = R.map(({ p, s }, i) => `<button class="rank r${i + 1}" data-act="pick" data-id="${p.id}">
+      <span class="rno"><i>${['👑', '🥈', '🥉'][i] || ''}</i><b>${i + 1}</b><small>位</small></span>
+      <span class="rav">${p.avatar}</span>
+      <span class="rmain"><span class="rname">${esc(p.name)}<small>${[...p.grades].sort().map((g) => '小' + g).join('・')}</small></span>
+        <span class="rbar"><i style="width:${(s.passed / top) * 100}%"></i></span></span>
+      <span class="rnum"><b>${s.passed}</b><small>字 おぼえた</small></span>
+      <span class="rsub"><span>💰 ${fmtZ(p.zeni || 0)}</span><span>🔥 ${s.streak}日　★ ${s.mastered}</span></span></button>`).join('');
+  app.innerHTML = `<div class="page narrow center">
     <h1 class="logo">かん字 かきとり<small>かいて おぼえる</small></h1>
-    <p class="lead">${DB.profiles.length ? 'だれが やる？' : 'さいしょに つかう人を とうろくしてね'}</p>
-    <div class="pgrid">${list}<button class="pcard add" data-act="add"><span class="pav">＋</span><span class="pname">ついか</span></button></div>
+    ${kanSay(DB.profiles.length ? 'だれが やる？ なまえを タップしてね！' : 'はじめまして、カン君だよ！ さいしょに つかう人を とうろくしてね。', 'happy', 'mid')}
+    ${DB.profiles.length ? `<h2 class="rtitle">🏆 かぞく ランキング<small>おぼえた かん字の 数で しょうぶ！</small></h2><div class="ranks">${rows}</div>` : ''}
+    <div class="row"><button class="btn" data-act="add">＋ 人を ついか</button></div>
+    ${cloudOn() ? `<p class="note">☁️ ${syncMsg ? 'どうきエラー: ' + esc(syncMsg) : DB.lastSync ? 'クラウドと どうきずみ' : 'どうき中…'}</p>` : ''}
   </div>`;
   onAct({
-    pick: (el) => { DB.current = el.dataset.id; save(); P = DB.profiles.find((p) => p.id === DB.current); go(viewHome); },
+    pick: (el) => { DB.current = el.dataset.id; saveLocal(); P = DB.profiles.find((p) => p.id === DB.current); go(viewHome); },
     add: () => go(viewProfileForm, null),
   });
 }
@@ -349,8 +414,8 @@ function viewProfileForm(p) {
       const grades = [...app.querySelectorAll('.grs input:checked')].map((i) => +i.value);
       if (!name) return alert('なまえを 入れてね');
       if (!grades.length) return alert('学年を 1つ えらんでね');
-      if (p) { p.name = name; p.avatar = avatar; p.grades = grades; p.session = null; save(); go(viewSettings); }
-      else { DB.profiles.push(newProfile(name, avatar, grades)); save(); go(viewProfiles); }
+      if (p) { p.name = name; p.avatar = avatar; p.grades = grades; p.session = null; p.upd = Date.now(); save(); go(viewSettings); }
+      else { DB.profiles.push(newProfile(name, avatar, grades)); save(); go(viewProfiles); syncNow(); }
     },
   });
 }
@@ -364,38 +429,51 @@ function sessionState() {
 }
 function viewHome() {
   const s = stats(P), st = sessionState(), t = today();
-  const due = dueList(P).length, fresh = freshList(P).length;
   const week = [];
   for (let i = 6; i >= 0; i--) {
     const d = addDays(t, -i), L = P.log[d];
     week.push(`<div class="wd ${L && L.fin ? 'fin' : L ? 'part' : ''} ${i === 0 ? 'today' : ''}"><span>${'日月火水木金土'[parseD(d).getDay()]}</span><b>${L && L.fin ? '💮' : L ? '✏️' : '・'}</b></div>`);
   }
-  let main;
+  // この7日間に れんしゅうした字・ごうかくした字
+  const from = addDays(t, -6);
+  let wk = 0, wkOk = 0;
+  for (const c of Object.values(P.cards)) {
+    const hs = c.h.filter((h) => h[0] >= from);
+    if (hs.length) { wk++; if (hs.some((h) => h[1])) wkOk++; }
+  }
+  let main, talk;
   if (st.kind === 'new') {
     const q = buildQueue(P);
-    main = q.length
-      ? `<div class="todo">きょうは <b>${q.length}</b>字<small>ふくしゅう ${q.filter((k) => P.cards[k]).length}字 ／ あたらしい字 ${q.filter((k) => !P.cards[k]).length}字</small></div>
-         <button class="btn primary huge" data-act="start">はじめる</button>`
-      : `<div class="todo">きょう やる字は ありません 🎉</div><button class="btn" data-act="more">それでも れんしゅうする</button>`;
+    if (q.length) {
+      main = `<div class="todo">きょうは <b>${q.length}</b>字<small>ふくしゅう ${q.filter((k) => P.cards[k]).length}字 ／ あたらしい字 ${q.filter((k) => !P.cards[k]).length}字</small></div>
+         <button class="btn primary huge" data-act="start">はじめる</button>`;
+      talk = [`${esc(P.name)}、きょうも いっしょに がんばろう！`, s.streak >= 2 ? `${s.streak}日 れんぞく中！ きょうも つなげよう！` : 'ゆっくりで いいよ。ていねいに かこう！'][s.streak >= 2 ? 1 : 0];
+    } else {
+      main = `<div class="todo">きょう やる字は ありません 🎉</div><button class="btn" data-act="more">それでも れんしゅうする</button>`;
+      talk = 'ぜんぶ おわってる！ すごすぎる！';
+    }
   } else if (st.kind === 'resume') {
     main = `<div class="todo">あと <b>${st.left}</b>字</div><button class="btn primary huge" data-act="resume">つづきから</button>`;
+    talk = 'おかえり！ つづきから いこう！';
   } else {
-    main = `<div class="todo done">💮 きょうのぶんは おわり！<small>また あした</small></div><button class="btn" data-act="more">もっとやる（＋5字）</button>`;
+    main = `<div class="todo done">💮 きょうのぶんは おわり！</div><button class="btn" data-act="more">もっとやる（＋5字）</button>`;
+    talk = 'きょうも えらい！ また あした まってるよ。';
   }
-  const bars = [...P.grades].sort().map((g) => {
-    const x = s.g[g];
-    return `<div class="gbar"><div class="gl">小${g}<small>ごうかく ${x.passed} ／ ★ ${x.mastered} ／ ${x.n}字</small></div>
-      <div class="bar"><i class="b1" style="width:${(x.passed / x.n) * 100}%"></i><i class="b2" style="width:${(x.mastered / x.n) * 100}%"></i></div></div>`;
+  const grades = [...P.grades].sort().map((g) => {
+    const x = s.g[g], rest = x.n - x.mastered - x.ok - x.learning;
+    return `<div class="gst"><div class="gl">小${g}<small>${Math.round((x.passed / x.n) * 100)}%　${x.passed} ／ ${x.n}字 ごうかく</small></div>
+      <div class="seg"><i class="s-star" style="flex:${x.mastered}"></i><i class="s-ok" style="flex:${x.ok}"></i><i class="s-learn" style="flex:${x.learning}"></i><i class="s-rest" style="flex:${rest}"></i></div>
+      <div class="gleg"><span><i class="s-star"></i>★マスター <b>${x.mastered}</b></span><span><i class="s-ok"></i>ごうかく <b>${x.ok}</b></span><span><i class="s-learn"></i>がくしゅう中 <b>${x.learning}</b></span><span><i class="s-rest"></i>まだ <b>${rest}</b></span></div></div>`;
   }).join('');
+  const R = ranking(), myRank = R.findIndex((r) => r.p === P) + 1;
   app.innerHTML = `<div class="page">
     <header class="top"><button class="who" data-act="switch"><span>${P.avatar}</span>${esc(P.name)}<small>きりかえ</small></button>
-      <div class="chips"><span class="chip fire">🔥 ${s.streak}日れんぞく</span><span class="chip">🏆 ${Object.keys(P.trophies).length}</span></div></header>
-    <section class="lvbar"><b>Lv.${s.level}</b><span>${titleOf(s.level)}</span>
-      <div class="bar"><i class="bx" style="width:${(((P.xp || 0) - xpFor(s.level)) / (xpFor(s.level + 1) - xpFor(s.level))) * 100}%"></i></div>
-      <small>つぎの レベルまで ${xpFor(s.level + 1) - (P.xp || 0)} XP</small></section>
-    <section class="hero">${main}</section>
+      <div class="chips">${R.length > 1 ? `<span class="chip rankc">${['👑', '🥈', '🥉'][myRank - 1] || '🏅'} かぞく ${myRank}位</span>` : ''}<span class="chip fire">🔥 ${s.streak}日れんぞく</span><span class="chip">🏆 ${Object.keys(P.trophies).length}</span></div></header>
+    <section class="wallet"><span class="wicon">💰</span><b>${fmtZ(P.zeni || 0)}</b><small>ゼニー</small><span class="wtitle">${ztitle(P.zeni || 0)}</span></section>
+    <section class="hero">${kanSay(talk, st.kind === 'done' ? 'happy' : 'normal')}${main}</section>
     <section class="week">${week.join('')}</section>
-    <section class="card">${bars}<p class="note">のこり：あたらしい字 ${fresh}字／きょうの ふくしゅう ${due}字</p></section>
+    <p class="wsum">この7日間　✏️ <b>${wk}</b>字 れんしゅう　◎ <b>${wkOk}</b>字 ごうかく</p>
+    <section class="card">${grades}</section>
     <nav class="navs">
       <button class="btn nav" data-act="zukan">📖<span>かん字ずかん</span></button>
       <button class="btn nav" data-act="rec">🏆<span>きろく・トロフィー</span></button>
@@ -433,15 +511,17 @@ function viewStudy(ctx) {
   const practice = !!S.practice;
   const k = S.queue[S.pos], D = KD[k];
   const targets = D.s.map(samplePath);
+  const tip = kanjiTip(targets);
   const limitMs = P.limit * 1000;
   const isNew = !P.cards[k];
   const c = { mode: 'test', idx: 0, miss: 0, missHere: 0, hinted: false, gaveUp: false, erased: false, drift: [0, 0], nAcc: 0, t0: 0, ms: 0, raf: 0 };
   const tools = `<div class="tools"><button class="btn sm" data-act="undo">↩ 1画もどす</button><button class="btn sm" data-act="clear">🧽 ぜんぶけす</button></div>`;
 
   app.innerHTML = `<div class="study">
-    <header class="sbar"><button class="x" data-act="quit">✕</button>
+    <header class="sbar"><button class="x" data-act="quit">✕</button><span class="pchip">${P.avatar} ${esc(P.name)}</span>
       <div class="dots">${S.queue.map((q, i) => `<i class="${i < S.pos ? (S.res[i] && S.res[i].ok ? 'ok' : 'ng') : i === S.pos ? 'cur' : ''}"></i>`).join('')}</div>
       <div class="combo ${S.combo >= 2 ? 'on' : ''}" id="combo">🔥 ${S.combo || 0}コンボ</div>
+      <button class="snd ${DB.sound !== false ? '' : 'off'}" data-act="sfx">${DB.sound !== false ? '🔊' : '🔇'}</button><button class="snd ${DB.bgm !== false ? '' : 'off'}" data-act="bgm">🎵</button>
       <div class="cnt">${S.pos + 1} / ${S.queue.length}</div></header>
     <div class="smain">
       <section class="prompt">
@@ -449,7 +529,7 @@ function viewStudy(ctx) {
         <div class="timer"><div class="tbar"><i id="tfill"></i></div><span id="tnum">0.0</span><small>びょう</small></div>
         <div class="yomi">${esc(D.y)}</div>
         <ul class="exs" id="exs">${D.ex.map(([w, r]) => `<li><ruby>${esc(maskWord(w, k))}<rt>${esc(r)}</rt></ruby></li>`).join('')}</ul>
-        <div id="msg" class="msg"></div>
+        <div id="kanbox"></div>
         <div id="result"></div>
         <div class="sbtns" id="sbtns">${tools}<button class="btn ghost" data-act="giveup">わからない</button></div>
       </section>
@@ -463,8 +543,13 @@ function viewStudy(ctx) {
       </section>
     </div></div>`;
 
-  const pad = $('#pad'), gInk = $('#ink'), gModel = $('#model'), gFx = $('#fx'), curEl = $('#cur'), msg = $('#msg');
-  const setMsg = (t, cls = '') => { msg.textContent = t; msg.className = 'msg ' + cls; };
+  const pad = $('#pad'), gInk = $('#ink'), gModel = $('#model'), gFx = $('#fx'), curEl = $('#cur');
+  let warned = false;
+  const say = (t, mood = 'normal') => { $('#kanbox').innerHTML = kanSay(t, mood, 'sm'); };
+  const setMsg = (t, cls = '') => {
+    if (!t) { if (warned) { warned = false; say('そう、その ちょうし！', 'happy'); } return; }
+    warned = cls === 'warn'; say(esc(t), warned ? 'sad' : 'normal');
+  };
   const setKaku = () => { $('#kaku').textContent = `${Math.min(c.idx + 1, D.s.length)}画目 ／ ${D.s.length}画`; };
 
   // タイマー
@@ -477,7 +562,8 @@ function viewStudy(ctx) {
     c.raf = requestAnimationFrame(tick);
   };
   const stopTimer = () => { cancelAnimationFrame(c.raf); c.raf = 0; };
-  cleanup = stopTimer;
+  inStudy = true;
+  cleanup = () => { stopTimer(); inStudy = false; };
 
   // お手本の表示
   function drawModel(kind) {
@@ -571,10 +657,11 @@ function viewStudy(ctx) {
     c.miss++; c.missHere++;
     let why = 'ちがうみたい。もういちど！', type = 'shape';
     if (r.reversed) { why = 'かく むきが ぎゃくだよ'; type = 'rev'; }
-    else if (targets.some((t, j) => j > c.idx && judge(pts, t, c.drift).ok)) { why = 'かきじゅんが ちがうよ'; type = 'order'; }
+    else { const j = targets.findIndex((t, x) => x > c.idx && judge(pts, t, c.drift).ok); if (j > 0) { why = mistakeTip(targets, c.idx, j); type = 'order'; } }
     if (!practice) { P.err = P.err || {}; P.err[type] = (P.err[type] || 0) + 1; }
-    setMsg(`✕ ${c.idx + 1}画目：${why}`, 'warn');
-    if (c.missHere >= 3) { showHint(); setMsg(`${c.idx + 1}画目の ヒントを 見て かこう`, 'warn'); }
+    setMsg(`${c.idx + 1}画目：${why}`, 'warn');
+    if (type === 'order') showHint();
+    else if (c.missHere >= 3) { showHint(); setMsg(`${c.idx + 1}画目の ヒントを 見て かこう`, 'warn'); }
   }
 
   /** 書きかけを消す（all=false なら1画だけ）。まちがいには数えない */
@@ -634,16 +721,17 @@ function viewStudy(ctx) {
       }
       const newBest = !practice && prevBest != null && c.ms < prevBest;
       if (newBest) { S.bests = (S.bests || 0) + 1; if (S.bests >= 3) events.push('best3'); }
-      const xp = practice ? 2 : 10 + { S: 10, A: 5, B: 0 }[rank] + Math.min(S.combo, 10) * 2;
-      S.xp = (S.xp || 0) + xp;
-      popups = addXp(xp);
+      const gain = practice ? 10000 : Math.round(n * 10000 * { S: 5, A: 3, B: 2 }[rank] * (1 + Math.min(S.combo - 1, 9) * 0.5));
+      S.z = (S.z || 0) + gain;
+      addZ(gain);
       const lv = practice ? 0 : P.cards[k].lv;
       res.innerHTML = `<div class="res ok"><b>◎ ${PRAISE[Math.floor(Math.random() * PRAISE.length)]}</b>
         <span><i class="rk rk-${rank}">${rank}</i> ${sec(c.ms)}びょう${lv === MASTER_LV ? '　★マスター！' : ''}</span>
-        <span class="xp">+${xp} XP${S.combo >= 2 ? `　🔥${S.combo}コンボ` : ''}</span>
+        <span class="xp">💰 +${fmtZ(gain)}ゼニー${S.combo >= 2 ? `　🔥${S.combo}コンボ` : ''}</span>
         ${newBest ? `<span class="nb">⏱ じこベスト こうしん！（${sec(prevBest)} → ${sec(c.ms)}）</span>` : ''}
         ${practice ? '' : `<small>つぎは ${iv}日ご</small>`}</div>`;
       $('#sbtns').innerHTML = `<button class="btn primary big" data-act="next">${practice && S.pos + 1 >= S.queue.length ? 'おわる' : 'つぎへ'}</button>${practice ? '<button class="btn ghost" data-act="again">もういちど</button>' : ''}`;
+      say(S.combo >= 3 ? `${S.combo}コンボ！ とまらないね！` : rank === 'S' ? 'はやい！ Sランクだ！' : 'いいね、その ちょうし！', 'happy');
       $('#stamp').innerHTML = `<div class="rankstamp rk-${rank}">${rank}</div>`;
       $('#padwrap').classList.add('win');
       const cb = $('#combo'); cb.textContent = `🔥 ${S.combo}コンボ`; cb.classList.toggle('on', S.combo >= 2); cb.classList.add('bump');
@@ -655,20 +743,21 @@ function viewStudy(ctx) {
       $('#combo').classList.remove('on');
       SND.fail();
       const why = c.gaveUp ? 'こたえを 見たよ' : [c.miss ? `まちがい ${c.miss}回` : '', c.hinted && !c.miss ? 'ヒントあり' : '', !inTime ? `じかん ${sec(c.ms)}びょう（${P.limit}びょうまで）` : ''].filter(Boolean).join('・');
-      res.innerHTML = `<div class="res ng"><b>もういっぽ！</b><span>${why}</span><small>${practice ? 'なぞって おぼえよう' : 'あした もういちど 出るよ'}</small></div>`;
-      $('#sbtns').innerHTML = `<button class="btn primary big" data-act="trace">なぞって れんしゅう</button>${practice ? '<button class="btn ghost" data-act="again">もういちど</button>' : ''}<button class="btn ghost" data-act="next">とばす</button>`;
+      startTrace(`<div class="res ng"><b>もういっぽ！</b><span>${why}</span><small>${practice ? '' : 'あした もういちど 出るよ'}</small></div>`);
     }
     save();
     popups = popups.concat(checkTrophies({ ev: events }));
     if (popups.length) setTimeout(() => showTrophies(popups), 600);
   }
 
-  function startTrace() {
+  /** まちがえたら、すぐに お手本を なぞって おぼえる */
+  function startTrace(resHtml = '') {
     c.mode = 'trace'; c.idx = 0; c.drift = [0, 0]; c.nAcc = 0;
     gInk.innerHTML = ''; $('#stamp').innerHTML = '';
-    $('#result').innerHTML = '';
-    $('#sbtns').innerHTML = `${tools}<button class="btn ghost" data-act="next">とばす</button>`;
-    setMsg('オレンジの線を じゅんばんに なぞろう');
+    $('#result').innerHTML = resHtml;
+    $('#sbtns').innerHTML = `${tools}${practice ? '<button class="btn ghost" data-act="again">もういちど</button>' : ''}<button class="btn ghost" data-act="next">とばす</button>`;
+    warned = false;
+    say(`オレンジの 線を なぞって おぼえよう。<br>💡 ${tip.text}`, 'think');
     drawModel('trace'); setKaku();
   }
   function finishTrace() {
@@ -676,8 +765,10 @@ function viewStudy(ctx) {
     SND.pass();
     setMsg('');
     bump('trace');
-    const popups = addXp(3).concat(checkTrophies());
-    $('#result').innerHTML = `<div class="res ok"><b>よく できました</b><span class="xp">+3 XP</span><small>${practice ? '' : 'あした もういちど ちょうせん！'}</small></div>`;
+    addZ(50000);
+    const popups = checkTrophies();
+    say('よく できました！ これで ばっちり。', 'happy');
+    $('#result').innerHTML = `<div class="res ok"><b>よく できました</b><span class="xp">💰 +5万ゼニー</span><small>${practice ? '' : 'あした もういちど ちょうせん！'}</small></div>`;
     $('#sbtns').innerHTML = `<button class="btn primary big" data-act="next">${practice && S.pos + 1 >= S.queue.length ? 'おわる' : 'つぎへ'}</button>${practice ? '<button class="btn ghost" data-act="again">もういちど</button>' : ''}`;
     if (popups.length) setTimeout(() => showTrophies(popups), 400);
   }
@@ -688,7 +779,8 @@ function viewStudy(ctx) {
     giveup: () => { if (c.mode !== 'test') return; c.gaveUp = true; gInk.innerHTML = ''; finishTest(); },
     undo: () => erase(false),
     clear: () => erase(true),
-    trace: startTrace,
+    sfx: (el) => { DB.sound = DB.sound === false; applyAudio(); saveLocal(); el.textContent = DB.sound ? '🔊' : '🔇'; el.classList.toggle('off', !DB.sound); },
+    bgm: (el) => { DB.bgm = DB.bgm === false; applyAudio(); saveLocal(); el.classList.toggle('off', !DB.bgm); },
     again: () => go(viewStudy, ctx),
     next: () => {
       if (c.mode === 'test') return;
@@ -702,6 +794,7 @@ function viewStudy(ctx) {
     },
   });
 
+  say(practice ? 'れんしゅうだよ。きろくには のこらないから、気楽に かこう！' : isNew ? 'あたらしい字だよ。よみを 見て かいてみよう！' : 'おぼえてるかな？ 思い出して かこう！');
   setKaku();
   c.t0 = performance.now();
   tick();
@@ -717,10 +810,12 @@ function finishSession() {
   if (S.extra) bump('extra');
   if (first && [0, 6].includes(parseD(t).getDay())) bump('weekend');
   if (first && new Date().getHours() < 7) events.push('early');
-  const bonus = first ? 30 : 10;
-  S.xp = (S.xp || 0) + bonus;
+  const bonus = first ? 1000000 * Math.min(streak(P), 30) : 300000; // れんぞく日数 × 100万
+  S.z = (S.z || 0) + bonus;
+  addZ(bonus);
   save();
-  const got = addXp(bonus).concat(checkTrophies({ ev: events }));
+  const got = checkTrophies({ ev: events });
+  if (cloudOn()) { clearTimeout(pushTimer); pushProfile(DB.family, P).catch(() => {}); }
   go(viewSummary, { first, got, bonus });
 }
 
@@ -730,8 +825,9 @@ function viewSummary({ first, got, bonus }) {
   app.innerHTML = `<div class="page narrow center">
     <div class="stamp">💮</div>
     <h2>${S.extra ? 'おつかれさま！' : 'きょうのぶん おわり！'}</h2>
+    ${kanSay(okN === S.res.length ? 'ぜんぶ ごうかく！ かんぺきだ！' : 'おつかれさま！ ✕の字は あした リベンジしよう。', 'happy', 'mid')}
     <div class="sumrow"><div><b>${okN}</b><small>／${S.res.length} ごうかく</small></div><div><b>🔥${st}</b><small>日れんぞく</small></div>
-      <div><b>${maxCombo}</b><small>さいだいコンボ</small></div><div><b>+${S.xp || 0}</b><small>XP（ボーナス ${bonus}）</small></div></div>
+      <div><b>${maxCombo}</b><small>さいだいコンボ</small></div><div><b>💰${fmtZ(S.z || 0)}</b><small>ゼニー（ボーナス ${fmtZ(bonus)}）</small></div></div>
     <div class="sumlist">${S.res.map((r) => `<div class="si ${r.ok ? 'ok' : 'ng'}"><span class="kj">${r.k}</span><span>${r.ok ? '◎' : '✕'}</span><small>${r.gaveUp ? '—' : sec(r.ms) + 's'}</small></div>`).join('')}</div>
     <p class="note">✕の字は あした もういちど 出ます。◎の字は 少しずつ 間を あけて また出ます。</p>
     <button class="btn primary big" data-act="home">ホームへ</button></div>`;
@@ -774,6 +870,7 @@ function showKanji(k, back = viewZukan) {
     <div class="kinfo"><div class="yomi sm">${esc(D.y)}</div>
       <ul class="exs">${D.ex.map(([w, r]) => `<li><ruby>${esc(w)}<rt>${esc(r)}</rt></ruby></li>`).join('')}</ul>
       <p>${D.s.length}画　小${D.g}</p>
+      <p class="ktip">💡 ${kanjiTip(D.s.map(samplePath)).text}</p>
       ${c ? `<p>ごうかく ${c.okc}回 ／ ${c.n}回${c.best != null ? `　ベスト ${sec(c.best)}びょう` : ''}</p>
         <p>${c.lv >= MASTER_LV ? '★マスター　' : ''}つぎは ${dayDiff(c.due, today()) <= 0 ? 'きょう' : dayDiff(c.due, today()) + '日ご'}</p><div class="hist">${hist}</div>` : '<p>まだ れんしゅうしていません</p>'}
       <div class="row"><button class="btn" data-x="replay">▶ かきじゅん</button><button class="btn primary" data-x="practice">✏️ れんしゅうする</button><button class="btn" data-x="close">とじる</button></div></div></div>`;
@@ -890,7 +987,19 @@ function viewSettings() {
         <option value="auto" ${DB.pen === 'auto' ? 'selected' : ''}>自動（ペンを使ったら指は無視）</option>
         <option value="pen" ${DB.pen === 'pen' ? 'selected' : ''}>Apple Pencil のみ</option>
         <option value="any" ${DB.pen === 'any' ? 'selected' : ''}>指でも書ける</option></select></label>
-      <label class="fld inline">効果音<select id="sound"><option value="1" ${DB.sound ? 'selected' : ''}>あり</option><option value="0" ${DB.sound ? '' : 'selected'}>なし</option></select></label>
+      <label class="fld inline">効果音（書く音・合格の音）<select id="sound"><option value="1" ${DB.sound !== false ? 'selected' : ''}>あり</option><option value="0" ${DB.sound !== false ? '' : 'selected'}>なし</option></select></label>
+      <label class="fld inline">BGM（音楽）<select id="bgm"><option value="1" ${DB.bgm !== false ? 'selected' : ''}>あり</option><option value="0" ${DB.bgm !== false ? '' : 'selected'}>なし</option></select></label>
+      <p class="note">音が出ないときは、画面をどこか1回タップすると自動で復旧します。プレイ中も右上の 🔊・🎵 で切りかえられます。</p>
+    </section>
+    <section class="card">
+      <h3>☁️ クラウド同期（ほかの iPad と記録を共有）</h3>
+      ${!cloudReady() ? '<p class="note">まだ準備中です（Firebase の接続先が未設定）。記録はこの端末の中だけに保存されています。</p>'
+    : DB.family ? `<p>同期中です。ほかの端末でも<b>同じ合言葉</b>を入れると、同じ記録が出ます。</p>
+        <p class="note">合言葉：<code>${esc(DB.family)}</code><br>${syncMsg ? '⚠️ エラー: ' + esc(syncMsg) : DB.lastSync ? '最後の同期：' + new Date(DB.lastSync).toLocaleString('ja-JP') : 'まだ同期していません'}</p>
+        <div class="row"><button class="btn primary" data-act="sync">いま同期する</button><button class="btn" data-act="unlink">同期をやめる</button></div>`
+    : `<p class="note">家族だけの合言葉を決めて、使う端末すべてに同じものを入れてください。合言葉を知っている人は記録を見られるので、推測されにくいものにしてください。</p>
+        <label class="fld">合言葉<input id="fam" type="text" maxlength="40" placeholder="12文字以上" autocomplete="off" autocapitalize="off"></label>
+        <div class="row"><button class="btn" data-act="gen">自動で作る</button><button class="btn primary" data-act="link">この合言葉で同期する</button></div>`}
     </section>
     <section class="card">
       <h3>記録のバックアップ（全プロフィール）</h3>
@@ -902,16 +1011,18 @@ function viewSettings() {
   </div>`;
   app.onchange = (e) => {
     const id = e.target.id, v = e.target.value;
-    if (id === 'daily') { P.daily = +v; if (P.session && P.session.pos === 0 && !P.session.extra) P.session = null; }
-    if (id === 'limit') P.limit = +v;
+    if (id === 'fam') return;
+    if (id === 'daily') { P.daily = +v; P.upd = Date.now(); if (P.session && P.session.pos === 0 && !P.session.extra) P.session = null; }
+    if (id === 'limit') { P.limit = +v; P.upd = Date.now(); }
     if (id === 'pen') DB.pen = v;
-    if (id === 'sound') DB.sound = v === '1';
+    if (id === 'sound') { DB.sound = v === '1'; applyAudio(); }
+    if (id === 'bgm') { DB.bgm = v === '1'; applyAudio(); }
     if (id === 'file' && e.target.files[0]) {
       e.target.files[0].text().then((txt) => {
         const d = JSON.parse(txt);
         if (!d || !Array.isArray(d.profiles)) throw new Error('形式がちがいます');
         if (!confirm(`${d.profiles.length}人分の記録を読みこみ、今の記録と置きかえます。よろしいですか？`)) return;
-        DB = d; save(); P = null; go(viewProfiles);
+        d.profiles.forEach(migrate); d.family = DB.family; DB = d; saveLocal(); P = null; go(viewProfiles); syncNow();
       }).catch((err) => alert('読みこめませんでした: ' + err.message));
       return;
     }
@@ -922,7 +1033,9 @@ function viewSettings() {
     edit: () => go(viewProfileForm, P),
     del: () => {
       if (!confirm(`「${P.name}」の記録をすべて消します。元にもどせません。よろしいですか？`)) return;
-      DB.profiles = DB.profiles.filter((p) => p !== P); DB.current = null; P = null; save(); go(viewProfiles);
+      (DB.deleted = DB.deleted || []).push(P.id);
+      if (cloudOn()) removeProfile(DB.family, P.id).catch(() => {});
+      DB.profiles = DB.profiles.filter((p) => p !== P); DB.current = null; P = null; saveLocal(); go(viewProfiles);
     },
     export: () => {
       const a = document.createElement('a');
@@ -932,6 +1045,21 @@ function viewSettings() {
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     },
     import: () => $('#file').click(),
+    gen: () => {
+      const a = new Uint32Array(3); crypto.getRandomValues(a);
+      $('#fam').value = [...a].map((x) => x.toString(36).padStart(6, '0').slice(-5)).join('-');
+    },
+    link: async () => {
+      const code = $('#fam').value.trim();
+      if (code.length < 12) return alert('合言葉は12文字以上にしてください（「自動で作る」も使えます）');
+      DB.family = code; saveLocal();
+      const ok = await syncNow();
+      if (!ok) alert('同期できませんでした: ' + syncMsg);
+      P = DB.profiles.find((p) => p.id === DB.current) || P;
+      go(viewSettings);
+    },
+    sync: async () => { const ok = await syncNow(); if (!ok && syncMsg) alert('同期できませんでした: ' + syncMsg); go(viewSettings); },
+    unlink: () => { if (confirm('この端末での同期をやめます。記録は端末にもクラウドにも残ります。')) { DB.family = ''; saveLocal(); go(viewSettings); } },
   });
 }
 
@@ -946,5 +1074,7 @@ document.addEventListener('dblclick', (e) => e.preventDefault());
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   P = DB.profiles.find((p) => p.id === DB.current) || null;
+  applyAudio(); setBgm(true);
   go(viewProfiles);
+  syncNow().then((ok) => { if (ok && curView === viewProfiles) go(viewProfiles); });
 })();
