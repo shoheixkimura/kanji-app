@@ -347,3 +347,13 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
 @keyframes cutband { 0% { transform: translateX(-110%) skewX(-12deg); } 12% { transform: translateX(0) skewX(-12deg); } 18%, 82% { transform: none; } 100% { transform: translateX(110%) skewX(12deg); } }
 @keyframes cutkan { 0%, 10% { transform: scale(0) rotate(-40deg); } 22% { transform: scale(1.25) rotate(8deg); } 30%, 100% { transform: scale(1) rotate(0); } }
 @keyframes cuttext { 0%, 14% { opacity: 0; transform: translateX(60px); } 26%, 100% { opacity: 1; transform: none; } }
+
+.kan-dizzy .kanbody { animation: kandizzy 1.6s ease-in-out infinite; transform-origin: 50% 100%; transform-box: fill-box; }
+.kan-sleep .kanbody { animation: kansleep 3s ease-in-out infinite; transform-origin: 50% 100%; transform-box: fill-box; }
+.kan-sleep .snot { animation: snot 3s ease-in-out infinite; transform-origin: 0 50%; transform-box: fill-box; }
+.kan-sleep .zzz { animation: zzz 3s ease-in-out infinite; }
+@keyframes kandizzy { 25% { transform: rotate(-9deg); } 75% { transform: rotate(9deg); } }
+@keyframes kansleep { 50% { transform: scale(1.04, .96); } }
+@keyframes snot { 50% { transform: scale(1.5); } }
+@keyframes zzz { 0% { opacity: .2; transform: translateY(4px); } 50% { opacity: 1; } 100% { opacity: .2; transform: translateY(-4px); } }
+.cut-sleep .cutband { background: linear-gradient(90deg, #14213d, #3a5a9c, #14213d); }
