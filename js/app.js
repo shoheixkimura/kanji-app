@@ -390,12 +390,43 @@ function viewProfiles() {
     <h1 class="logo">かん字 かきとり<small>かいて おぼえる</small></h1>
     ${kanSay(DB.profiles.length ? 'だれが やる？ なまえを タップしてね！' : 'はじめまして、カン君だよ！ さいしょに つかう人を とうろくしてね。', 'happy', 'mid')}
     ${DB.profiles.length ? `<h2 class="rtitle">🏆 かぞく ランキング<small>おぼえた かん字の 数で しょうぶ！</small></h2><div class="ranks">${rows}</div>` : ''}
-    <div class="row"><button class="btn" data-act="add">＋ 人を ついか</button></div>
-    ${cloudOn() ? `<p class="note">☁️ ${syncMsg ? 'どうきエラー: ' + esc(syncMsg) : DB.lastSync ? 'クラウドと どうきずみ' : 'どうき中…'}</p>` : ''}
+    <div class="row"><button class="btn" data-act="add">＋ 人を ついか</button>${cloudReady() && !DB.family ? '<button class="btn" data-act="cloud">☁️ ほかの端末の きろくを よびだす</button>' : ''}</div>
+    ${cloudOn() ? `<p class="note">☁️ ${syncMsg ? 'どうきエラー: ' + esc(syncMsg) : DB.lastSync ? 'クラウドと どうきずみ' : 'どうき中…'}　<button class="linkbtn" data-act="resync">いま どうきする</button></p>` : ''}
   </div>`;
   onAct({
     pick: (el) => { DB.current = el.dataset.id; saveLocal(); P = DB.profiles.find((p) => p.id === DB.current); go(viewHome); },
     add: () => go(viewProfileForm, null),
+    cloud: () => go(viewCloudLink),
+    resync: async () => { await syncNow(); go(viewProfiles); },
+  });
+}
+/** 人がまだいない端末でも、合言葉を入れて記録をよびだせる画面 */
+function viewCloudLink() {
+  app.innerHTML = `<div class="page narrow">
+    <header class="top"><button class="btn back" data-act="back">← もどる</button><h2>☁️ きろくを よびだす</h2><span></span></header>
+    <section class="card">
+      <p>ほかの端末で 使っている <b>合言葉</b>を 入れると、同じ人・同じ きろくが この端末にも 出てきます。</p>
+      <p class="note">合言葉は、すでに使っている端末の「せってい → ☁️ クラウド同期」に 表示されています。まだ どの端末でも 同期を 始めていない場合は、先に そちらで 合言葉を 作ってください。</p>
+      <label class="fld">合言葉<input id="fam" type="text" maxlength="40" placeholder="合言葉を 入れる" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <div class="row"><button class="btn primary" data-act="link">よびだす</button></div>
+      <p class="note" id="linkmsg"></p>
+    </section></div>`;
+  onAct({
+    back: () => go(viewProfiles),
+    link: async () => {
+      const code = $('#fam').value.trim();
+      if (code.length < 12) return alert('合言葉は 12文字以上です。もういちど たしかめてください。');
+      $('#linkmsg').textContent = 'よびだし中…';
+      const before = DB.profiles.length;
+      DB.family = code; saveLocal();
+      const ok = await syncNow();
+      if (!ok) { DB.family = ''; saveLocal(); $('#linkmsg').textContent = ''; return alert('同期できませんでした: ' + syncMsg); }
+      if (DB.profiles.length === before) {
+        const keep = confirm('この合言葉には まだ だれの きろくも ありませんでした。合言葉が 1文字でも ちがうと べつの場所に なります。\n\nこのまま この合言葉で 同期を つづけますか？（「キャンセル」で 入れなおし）');
+        if (!keep) { DB.family = ''; saveLocal(); $('#linkmsg').textContent = '合言葉を たしかめて、もういちど 入れてください。'; return; }
+      }
+      go(viewProfiles);
+    },
   });
 }
 function viewProfileForm(p) {

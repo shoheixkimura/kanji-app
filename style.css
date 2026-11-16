@@ -366,3 +366,5 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
 @keyframes orbit { 0% { transform: translateX(-10px); } 50% { transform: translateX(10px); } 100% { transform: translateX(-10px); } }
 .cut-ko .cutband { background: linear-gradient(90deg, #3a0d12, #c2262e, #3a0d12); }
 .cut-ko .cuttext { animation: cuttext 2.3s ease-out forwards, kanshake .1s linear 6; }
+
+.linkbtn { color: var(--pri-d); text-decoration: underline; font-size: inherit; }
