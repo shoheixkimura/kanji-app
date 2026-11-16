@@ -368,3 +368,5 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
 .cut-ko .cuttext { animation: cuttext 2.3s ease-out forwards, kanshake .1s linear 6; }
 
 .linkbtn { color: var(--pri-d); text-decoration: underline; font-size: inherit; }
+
+.ver { color: #b9b09c; font-size: 12px; margin-top: 18px; }

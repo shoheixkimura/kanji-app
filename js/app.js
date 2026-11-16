@@ -300,7 +300,7 @@ function showTrophies(list, done) {
 }
 
 // ───────── クラウド同期 ─────────
-let syncing = false, pushTimer = null, inStudy = false, syncMsg = '', curView = null;
+let syncing = false, pushTimer = null, inStudy = false, syncMsg = '', curView = null, pendingReload = false;
 const cloudOn = () => cloudReady() && !!DB.family;
 const pickCard = (a, b) => (!a ? b : !b ? a : a.n !== b.n ? (a.n > b.n ? a : b) : a.due >= b.due ? a : b);
 const keysOf = (x, y) => new Set([...Object.keys(x || {}), ...Object.keys(y || {})]);
@@ -360,6 +360,7 @@ function applyAudio() { audioCfg.sfx = DB.sound !== false; audioCfg.bgm = DB.bgm
 let cleanup = null;
 function go(render, ...args) {
   if (cleanup) { cleanup(); cleanup = null; }
+  if (pendingReload && render !== viewStudy) { location.reload(); return; }
   app.onclick = null; app.onchange = null;
   window.scrollTo(0, 0);
   curView = render;
@@ -392,6 +393,7 @@ function viewProfiles() {
     ${DB.profiles.length ? `<h2 class="rtitle">🏆 かぞく ランキング<small>おぼえた かん字の 数で しょうぶ！</small></h2><div class="ranks">${rows}</div>` : ''}
     <div class="row"><button class="btn" data-act="add">＋ 人を ついか</button>${cloudReady() && !DB.family ? '<button class="btn" data-act="cloud">☁️ ほかの端末の きろくを よびだす</button>' : ''}</div>
     ${cloudOn() ? `<p class="note">☁️ ${syncMsg ? 'どうきエラー: ' + esc(syncMsg) : DB.lastSync ? 'クラウドと どうきずみ' : 'どうき中…'}　<button class="linkbtn" data-act="resync">いま どうきする</button></p>` : ''}
+    <p class="ver">v${VERSION}</p>
   </div>`;
   onAct({
     pick: (el) => { DB.current = el.dataset.id; saveLocal(); P = DB.profiles.find((p) => p.id === DB.current); go(viewHome); },
@@ -1137,8 +1139,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const HISTORY = [
+  ['1.3.1', '2026-11-16', ['人がいない新しい端末でも、最初の画面から合言葉を入れて記録をよびだせるように', '新しい版が出たら自動で読みこみ直すように（古い版が残りつづける問題を修正）', '最初の画面にバージョン番号を表示', 'クラウドの記録はアプリから消せないように（消せるのは管理者だけ）', 'カン君がボコボコになってノックアウトされる演出']],
   ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'すごい成績を出しすぎると、カン君がボコボコになってノックアウトされる（つぎの日には復活）', 'クラウド同期（複数の端末で記録を共有。クラウドの記録を消せるのは管理者だけ）', 'バージョン・更新履歴のページ']],
   ['1.2.0', '2026-11-15', ['小3の200字を追加（小3〜小6 計786字）', '書きかけを消す「1画もどす／ぜんぶけす」', 'ずかんから字をえらんで練習', 'ランク・コンボなどの演出', '部首べつ・画数べつなどの「ぶんせき」と にがて特訓', 'トロフィーを約60種に（ひみつトロフィーなど）', 'アイコンに干支12種ほかを追加']],
   ['1.0.0', '2026-11-15', ['最初の公開。小4〜小6の書き取り、筆順の判定、10秒以内で合格、忘却曲線による復習、プロフィール、ずかん、トロフィー']],
@@ -1161,7 +1164,12 @@ document.addEventListener('dblclick', (e) => e.preventDefault());
   catch (e) { app.innerHTML = `<div class="page center"><p>データを 読みこめませんでした。</p><p class="note">${esc(e.message)}</p></div>`; return; }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // 新しい版が入ったら、自動で読みこみ直す（書き取り中は 終わってから）
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) { if (inStudy) pendingReload = true; else location.reload(); } });
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {});
   }
   P = DB.profiles.find((p) => p.id === DB.current) || null;
   applyAudio(); setBgm(true);
