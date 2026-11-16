@@ -2,7 +2,7 @@ import { samplePath, judge, pathLen } from './matcher.js';
 import { tone, audioCfg, setBgm, refreshBgm } from './audio.js';
 import { kanjiTip, mistakeTip } from './tips.js';
 import { kanSay, kanCutIn } from './kan.js';
-import { cloudReady, pullAll, pushProfile, removeProfile } from './cloud.js';
+import { cloudReady, pullAll, pushProfile } from './cloud.js';
 
 // ───────── 基本設定 ─────────
 const LS_KEY = 'kanjiapp.v1';
@@ -331,7 +331,7 @@ async function syncNow() {
     const remote = await pullAll(DB.family), dead = DB.deleted || [], seen = {};
     for (const r of remote) {
       if (!r || !r.id) continue;
-      if (dead.includes(r.id)) { removeProfile(DB.family, r.id).catch(() => {}); continue; }
+      if (dead.includes(r.id)) continue; // この端末では「外した」人。クラウドには残る
       seen[r.id] = JSON.stringify(r);
       const l = DB.profiles.find((p) => p.id === r.id);
       if (l) Object.assign(l, mergeProfile(l, r)); else DB.profiles.push(migrate(r));
@@ -1016,7 +1016,7 @@ function viewSettings() {
       <label class="fld inline">1日の字数<select id="daily">${opt([5, 8, 10, 12, 15, 20], P.daily, (x) => x + '字')}</select></label>
       <label class="fld inline">合格タイム<select id="limit">${opt([8, 10, 12, 15, 20, 30], P.limit, (x) => x + '秒以内')}</select></label>
       <p class="note">学年：${[...P.grades].sort().map((g) => '小' + g).join('・')}</p>
-      <div class="row"><button class="btn" data-act="edit">名前・学年を変える</button><button class="btn danger" data-act="del">このプロフィールを消す</button></div>
+      <div class="row"><button class="btn" data-act="edit">名前・学年を変える</button><button class="btn danger" data-act="del">${cloudOn() ? 'この端末から外す' : 'このプロフィールを消す'}</button></div>
     </section>
     <section class="card">
       <h3>この端末の設定</h3>
@@ -1033,7 +1033,8 @@ function viewSettings() {
       ${!cloudReady() ? '<p class="note">まだ準備中です（Firebase の接続先が未設定）。記録はこの端末の中だけに保存されています。</p>'
     : DB.family ? `<p>同期中です。ほかの端末でも<b>同じ合言葉</b>を入れると、同じ記録が出ます。</p>
         <p class="note">合言葉：<code>${esc(DB.family)}</code><br>${syncMsg ? '⚠️ エラー: ' + esc(syncMsg) : DB.lastSync ? '最後の同期：' + new Date(DB.lastSync).toLocaleString('ja-JP') : 'まだ同期していません'}</p>
-        <div class="row"><button class="btn primary" data-act="sync">いま同期する</button><button class="btn" data-act="unlink">同期をやめる</button></div>`
+        <div class="row"><button class="btn primary" data-act="sync">いま同期する</button><button class="btn" data-act="unlink">同期をやめる</button>${(DB.deleted || []).length ? `<button class="btn" data-act="restore">外した人を戻す（${DB.deleted.length}人）</button>` : ''}</div>
+        <p class="note">クラウドの記録は、アプリからは消せません。完全に消すのは、管理者が Firebase の画面から行います。</p>`
     : `<p class="note">家族だけの合言葉を決めて、使う端末すべてに同じものを入れてください。合言葉を知っている人は記録を見られるので、推測されにくいものにしてください。</p>
         <label class="fld">合言葉<input id="fam" type="text" maxlength="40" placeholder="12文字以上" autocomplete="off" autocapitalize="off"></label>
         <div class="row"><button class="btn" data-act="gen">自動で作る</button><button class="btn primary" data-act="link">この合言葉で同期する</button></div>`}
@@ -1071,9 +1072,10 @@ function viewSettings() {
     edit: () => go(viewProfileForm, P),
     about: () => go(viewAbout),
     del: () => {
-      if (!confirm(`「${P.name}」の記録をすべて消します。元にもどせません。よろしいですか？`)) return;
+      if (!confirm(cloudOn()
+        ? `「${P.name}」を この端末の一覧から外します。クラウドの記録は消えません（完全に消せるのは管理者だけです）。よろしいですか？`
+        : `「${P.name}」の記録をすべて消します。元にもどせません。よろしいですか？`)) return;
       (DB.deleted = DB.deleted || []).push(P.id);
-      if (cloudOn()) removeProfile(DB.family, P.id).catch(() => {});
       DB.profiles = DB.profiles.filter((p) => p !== P); DB.current = null; P = null; saveLocal(); go(viewProfiles);
     },
     export: () => {
@@ -1098,6 +1100,7 @@ function viewSettings() {
       go(viewSettings);
     },
     sync: async () => { const ok = await syncNow(); if (!ok && syncMsg) alert('同期できませんでした: ' + syncMsg); go(viewSettings); },
+    restore: async () => { DB.deleted = []; saveLocal(); await syncNow(); go(viewSettings); },
     unlink: () => { if (confirm('この端末での同期をやめます。記録は端末にもクラウドにも残ります。')) { DB.family = ''; saveLocal(); go(viewSettings); } },
   });
 }
@@ -1105,7 +1108,7 @@ function viewSettings() {
 // ───────── バージョン・更新履歴 ─────────
 const VERSION = '1.3.0';
 const HISTORY = [
-  ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'すごい成績を出しすぎると、カン君がボコボコになってノックアウトされる（つぎの日には復活）', 'クラウド同期（複数の端末で記録を共有）', 'バージョン・更新履歴のページ']],
+  ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'すごい成績を出しすぎると、カン君がボコボコになってノックアウトされる（つぎの日には復活）', 'クラウド同期（複数の端末で記録を共有。クラウドの記録を消せるのは管理者だけ）', 'バージョン・更新履歴のページ']],
   ['1.2.0', '2026-11-15', ['小3の200字を追加（小3〜小6 計786字）', '書きかけを消す「1画もどす／ぜんぶけす」', 'ずかんから字をえらんで練習', 'ランク・コンボなどの演出', '部首べつ・画数べつなどの「ぶんせき」と にがて特訓', 'トロフィーを約60種に（ひみつトロフィーなど）', 'アイコンに干支12種ほかを追加']],
   ['1.0.0', '2026-11-15', ['最初の公開。小4〜小6の書き取り、筆順の判定、10秒以内で合格、忘却曲線による復習、プロフィール、ずかん、トロフィー']],
 ];

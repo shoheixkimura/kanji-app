@@ -37,6 +37,4 @@ export async function pushProfile(code, p, keepalive = false) {
     body: JSON.stringify({ fields: { json: { stringValue: JSON.stringify(p) }, updated: { integerValue: String(Date.now()) } } }),
   });
 }
-export async function removeProfile(code, id) {
-  await call(`${base()}/families/${await famId(code)}/profiles/${encodeURIComponent(id)}?${key()}`, { method: 'DELETE' });
-}
+// 削除はアプリからは行わない（Firestore のルールでも禁止。消せるのは Firebase コンソールの管理者だけ）
