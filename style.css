@@ -320,3 +320,30 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16px; -webkit-user-select: all; user-select: all; }
 @media (orientation: portrait) { #kanbox { min-height: 70px; } .kan.sm .kanchar { width: 54px; } }
 .rno i { top: -24px; left: -2px; } .rank.r1 .rno i { top: -28px; font-size: 26px; }
+
+.hdate { font-weight: 400; color: var(--sub); font-size: 13px; margin-left: 10px; }
+.hist-ul { margin: 6px 0 0; padding-left: 1.3em; } .hist-ul li { margin: 4px 0; }
+
+/* ── カン君の表情とカットイン ── */
+.kan-wow .kanbody { animation: kanjump .5s ease-in-out infinite alternate; transform-origin: 50% 100%; transform-box: fill-box; }
+.kan-shock .kanbody { animation: kanshake .12s linear infinite; }
+.kan-fire .kanbody { animation: kanshake .2s linear infinite; }
+.kan-cry .tear { animation: tear .5s ease-in-out infinite alternate; transform-origin: 50% 0; transform-box: fill-box; }
+.kan-cool .kanbody { animation: kantilt 1.4s ease-in-out infinite alternate; transform-origin: 50% 100%; transform-box: fill-box; }
+.kan-money .kanbody { animation: kanjump .35s ease-in-out infinite alternate; transform-origin: 50% 100%; transform-box: fill-box; }
+@keyframes kanjump { to { transform: translateY(-8px) scale(1.04, .97); } }
+@keyframes kanshake { 0% { transform: translate(-1.5px, 0); } 50% { transform: translate(1.5px, -1px); } 100% { transform: translate(-1px, 1px); } }
+@keyframes kantilt { to { transform: rotate(7deg); } }
+@keyframes tear { to { transform: scaleY(1.12); opacity: .8; } }
+.cutin { position: fixed; inset: 0; z-index: 55; pointer-events: none; display: flex; align-items: center; overflow: hidden; }
+.cutband { width: 100%; display: flex; align-items: center; justify-content: center; gap: 3vw; padding: 10px 4vw; background: linear-gradient(90deg, #34304a, #5a4fb0, #34304a); border-top: 6px solid #ffd93b; border-bottom: 6px solid #ffd93b; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); animation: cutband 2.3s cubic-bezier(.2, .9, .3, 1) forwards; }
+.cut-shock .cutband { background: linear-gradient(90deg, #7a1f2b, #ff5a1f, #7a1f2b); }
+.cut-fire .cutband { background: linear-gradient(90deg, #7a1f00, #ff8a1f, #7a1f00); }
+.cut-money .cutband { background: linear-gradient(90deg, #6b4a00, #f6b100, #6b4a00); }
+.cut-cool .cutband { background: linear-gradient(90deg, #0b2a4a, #2aa7b8, #0b2a4a); }
+.cutkan { width: min(26vw, 30vh); flex: none; animation: cutkan 2.3s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+.cuttext { color: #fff; font-size: clamp(30px, 6vw, 76px); font-weight: 900; line-height: 1.15; text-shadow: 0 4px 0 rgba(0, 0, 0, .35); animation: cuttext 2.3s ease-out forwards; }
+.cuttext small { display: block; font-size: .45em; color: #ffe27a; }
+@keyframes cutband { 0% { transform: translateX(-110%) skewX(-12deg); } 12% { transform: translateX(0) skewX(-12deg); } 18%, 82% { transform: none; } 100% { transform: translateX(110%) skewX(12deg); } }
+@keyframes cutkan { 0%, 10% { transform: scale(0) rotate(-40deg); } 22% { transform: scale(1.25) rotate(8deg); } 30%, 100% { transform: scale(1) rotate(0); } }
+@keyframes cuttext { 0%, 14% { opacity: 0; transform: translateX(60px); } 26%, 100% { opacity: 1; transform: none; } }

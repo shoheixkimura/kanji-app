@@ -1,7 +1,7 @@
 import { samplePath, judge, pathLen } from './matcher.js';
 import { tone, audioCfg, setBgm, refreshBgm } from './audio.js';
 import { kanjiTip, mistakeTip } from './tips.js';
-import { kanSay } from './kan.js';
+import { kanSay, kanCutIn } from './kan.js';
 import { cloudReady, pullAll, pushProfile, removeProfile } from './cloud.js';
 
 // ───────── 基本設定 ─────────
@@ -731,7 +731,19 @@ function viewStudy(ctx) {
         ${newBest ? `<span class="nb">⏱ じこベスト こうしん！（${sec(prevBest)} → ${sec(c.ms)}）</span>` : ''}
         ${practice ? '' : `<small>つぎは ${iv}日ご</small>`}</div>`;
       $('#sbtns').innerHTML = `<button class="btn primary big" data-act="next">${practice && S.pos + 1 >= S.queue.length ? 'おわる' : 'つぎへ'}</button>${practice ? '<button class="btn ghost" data-act="again">もういちど</button>' : ''}`;
-      say(S.combo >= 3 ? `${S.combo}コンボ！ とまらないね！` : rank === 'S' ? 'はやい！ Sランクだ！' : 'いいね、その ちょうし！', 'happy');
+      // カン君のリアクション（すごいほど大げさに）
+      const hard = n >= 13;
+      if (!practice && lv === MASTER_LV) { say('★マスター！！ もう わすれないね！', 'wow'); kanCutIn(`「${k}」★マスター！！`, 'wow'); }
+      else if (hard && rank === 'S') { say(`えええ！？ ${n}画を ${sec(c.ms)}びょう！？`, 'shock'); kanCutIn(`${n}画を ${sec(c.ms)}びょう！？<small>うそでしょ！？</small>`, 'shock'); }
+      else if (S.combo >= 10 && S.combo % 5 === 0) { say(`${S.combo}コンボ！！ もえてきたー！`, 'fire'); kanCutIn(`${S.combo}コンボ！！<small>だれにも とめられない！</small>`, 'fire'); }
+      else if (S.combo === 5) { say('5コンボ！ のってきたね。', 'cool'); kanCutIn('5コンボ！<small>クールに きめるぜ</small>', 'cool'); }
+      else if (gain >= 2000000) { say(`${fmtZ(gain)}ゼニー！？ 大もうけだ！`, 'money'); kanCutIn(`+${fmtZ(gain)}ゼニー！<small>ザックザク！</small>`, 'money'); }
+      else if (newBest) say('じこベスト！ きのうの じぶんに かった！', 'wow');
+      else if (S.combo >= 6) say(`${S.combo}コンボ！ とまらない！`, 'fire');
+      else if (S.combo >= 3) say(`${S.combo}コンボ！ いい かんじ。`, 'cool');
+      else if (hard) say(`${n}画も あるのに かけた！ すごい！`, 'wow');
+      else if (rank === 'S') say('はやい！ Sランクだ！', 'wow');
+      else say('いいね、その ちょうし！', 'happy');
       $('#stamp').innerHTML = `<div class="rankstamp rk-${rank}">${rank}</div>`;
       $('#padwrap').classList.add('win');
       const cb = $('#combo'); cb.textContent = `🔥 ${S.combo}コンボ`; cb.classList.toggle('on', S.combo >= 2); cb.classList.add('bump');
@@ -757,7 +769,7 @@ function viewStudy(ctx) {
     $('#result').innerHTML = resHtml;
     $('#sbtns').innerHTML = `${tools}${practice ? '<button class="btn ghost" data-act="again">もういちど</button>' : ''}<button class="btn ghost" data-act="next">とばす</button>`;
     warned = false;
-    say(`オレンジの 線を なぞって おぼえよう。<br>💡 ${tip.text}`, 'think');
+    say(`${c.gaveUp || c.miss >= 3 ? 'うわーん…でも だいじょうぶ！ ' : ''}オレンジの 線を なぞって おぼえよう。<br>💡 ${tip.text}`, c.gaveUp || c.miss >= 3 ? 'cry' : 'think');
     drawModel('trace'); setKaku();
   }
   function finishTrace() {
@@ -767,7 +779,7 @@ function viewStudy(ctx) {
     bump('trace');
     addZ(50000);
     const popups = checkTrophies();
-    say('よく できました！ これで ばっちり。', 'happy');
+    say('よく できました！ これで ばっちり。', 'cool');
     $('#result').innerHTML = `<div class="res ok"><b>よく できました</b><span class="xp">💰 +5万ゼニー</span><small>${practice ? '' : 'あした もういちど ちょうせん！'}</small></div>`;
     $('#sbtns').innerHTML = `<button class="btn primary big" data-act="next">${practice && S.pos + 1 >= S.queue.length ? 'おわる' : 'つぎへ'}</button>${practice ? '<button class="btn ghost" data-act="again">もういちど</button>' : ''}`;
     if (popups.length) setTimeout(() => showTrophies(popups), 400);
@@ -825,7 +837,7 @@ function viewSummary({ first, got, bonus }) {
   app.innerHTML = `<div class="page narrow center">
     <div class="stamp">💮</div>
     <h2>${S.extra ? 'おつかれさま！' : 'きょうのぶん おわり！'}</h2>
-    ${kanSay(okN === S.res.length ? 'ぜんぶ ごうかく！ かんぺきだ！' : 'おつかれさま！ ✕の字は あした リベンジしよう。', 'happy', 'mid')}
+    ${kanSay(okN === S.res.length ? 'ぜんぶ ごうかく！ かんぺきだ！' : 'おつかれさま！ ✕の字は あした リベンジしよう。', okN === S.res.length ? 'wow' : 'happy', 'mid')}
     <div class="sumrow"><div><b>${okN}</b><small>／${S.res.length} ごうかく</small></div><div><b>🔥${st}</b><small>日れんぞく</small></div>
       <div><b>${maxCombo}</b><small>さいだいコンボ</small></div><div><b>💰${fmtZ(S.z || 0)}</b><small>ゼニー（ボーナス ${fmtZ(bonus)}）</small></div></div>
     <div class="sumlist">${S.res.map((r) => `<div class="si ${r.ok ? 'ok' : 'ng'}"><span class="kj">${r.k}</span><span>${r.ok ? '◎' : '✕'}</span><small>${r.gaveUp ? '—' : sec(r.ms) + 's'}</small></div>`).join('')}</div>
@@ -1007,6 +1019,7 @@ function viewSettings() {
       <div class="row"><button class="btn" data-act="export">ファイルに書き出す</button><button class="btn" data-act="import">ファイルから読みこむ</button></div>
       <input type="file" id="file" accept="application/json,.json" hidden>
     </section>
+    <div class="row"><button class="btn ghost" data-act="about">バージョン・更新履歴（v${VERSION}）</button></div>
     <p class="note">筆順データ: <a href="https://kanjivg.tagaini.net/" target="_blank" rel="noopener">KanjiVG</a> © Ulrich Apel（CC BY-SA 3.0）。字形は教科書体と細部が異なる場合があります。</p>
   </div>`;
   app.onchange = (e) => {
@@ -1031,6 +1044,7 @@ function viewSettings() {
   onAct({
     home: () => go(viewHome),
     edit: () => go(viewProfileForm, P),
+    about: () => go(viewAbout),
     del: () => {
       if (!confirm(`「${P.name}」の記録をすべて消します。元にもどせません。よろしいですか？`)) return;
       (DB.deleted = DB.deleted || []).push(P.id);
@@ -1061,6 +1075,23 @@ function viewSettings() {
     sync: async () => { const ok = await syncNow(); if (!ok && syncMsg) alert('同期できませんでした: ' + syncMsg); go(viewSettings); },
     unlink: () => { if (confirm('この端末での同期をやめます。記録は端末にもクラウドにも残ります。')) { DB.family = ''; saveLocal(); go(viewSettings); } },
   });
+}
+
+// ───────── バージョン・更新履歴 ─────────
+const VERSION = '1.3.0';
+const HISTORY = [
+  ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'クラウド同期（複数の端末で記録を共有）', 'バージョン・更新履歴のページ']],
+  ['1.2.0', '2026-11-15', ['小3の200字を追加（小3〜小6 計786字）', '書きかけを消す「1画もどす／ぜんぶけす」', 'ずかんから字をえらんで練習', 'ランク・コンボなどの演出', '部首べつ・画数べつなどの「ぶんせき」と にがて特訓', 'トロフィーを約60種に（ひみつトロフィーなど）', 'アイコンに干支12種ほかを追加']],
+  ['1.0.0', '2026-11-15', ['最初の公開。小4〜小6の書き取り、筆順の判定、10秒以内で合格、忘却曲線による復習、プロフィール、ずかん、トロフィー']],
+];
+function viewAbout() {
+  app.innerHTML = `<div class="page narrow">
+    <header class="top"><button class="btn back" data-act="back">← もどる</button><h2>バージョン・更新履歴</h2><span></span></header>
+    <section class="card"><h3>かん字 かきとり　v${VERSION}</h3>
+      <p class="note">記録の保存先：この端末のブラウザ内${cloudOn() ? '＋クラウド（同期中）' : ''}。アプリが新しくなっても、記録はそのまま引きつがれます。</p></section>
+    ${HISTORY.map(([v, d, items]) => `<section class="card"><h3>v${v}<small class="hdate">${d}</small></h3><ul class="hist-ul">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></section>`).join('')}
+  </div>`;
+  onAct({ back: () => go(viewSettings) });
 }
 
 // ───────── 起動 ─────────
