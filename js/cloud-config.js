@@ -2,6 +2,6 @@
 // Firebase コンソール → プロジェクトの設定 →「マイアプリ」の firebaseConfig から 2つを写す。
 // （この2つは公開されてよい値。データを守るのは Firestore のセキュリティルールと「家族の合言葉」）
 export const CLOUD = {
-  projectId: '',
-  apiKey: '',
+  projectId: 'dopakanji',
+  apiKey: 'AIzaSyCMoytEi_LEO3i03BpMn3fB66_q2Y841TU',
 };
