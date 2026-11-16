@@ -8,7 +8,9 @@ import { cloudReady, pullAll, pushProfile } from './cloud.js';
 const LS_KEY = 'kanjiapp.v1';
 const INTERVALS = [1, 3, 7, 14, 30, 60, 120]; // 合格が続くたびに伸びる復習間隔（日）
 const MASTER_LV = 4;                          // 4回連続合格で「マスター」
-const GRADES = [3, 4, 5, 6];
+const GRADES = [3, 4, 5, 6, 7, 8, 9, 10]; // 7〜9＝中1〜中3、10＝高校（常用漢字ののこり）
+const gname = (g) => (g <= 6 ? '小' + g : g <= 9 ? '中' + (g - 6) : '高校');
+const byNum = (a, b) => a - b;
 const AVATARS = [
   '🐭', '🐮', '🐯', '🐰', '🐲', '🐍', '🐴', '🐑', '🐵', '🐔', '🐶', '🐗', // 干支
   '🦊', '🐼', '🐧', '🐨', '🦁', '🐸', '🐙', '🦄', '🐳', '🦖', '🐱', '🦉', '🐻', '🐹', '🦈', '🦋', '🐢', '🦕',
@@ -88,7 +90,7 @@ function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
-function pool(p) { return [...p.grades].sort().flatMap((g) => GL[g] || []); }
+function pool(p) { return [...p.grades].sort(byNum).flatMap((g) => GL[g] || []); }
 function dueList(p) {
   const t = today();
   // 期限の古い順、同じ日なら不合格だった字（lv0）を先に
@@ -107,7 +109,7 @@ function gradeOrder(p, g) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return (orderCache[key] = a);
 }
-function freshList(p) { return [...p.grades].sort().flatMap((g) => gradeOrder(p, g)).filter((k) => !p.cards[k]); }
+function freshList(p) { return [...p.grades].sort(byNum).flatMap((g) => gradeOrder(p, g)).filter((k) => !p.cards[k]); }
 
 /** きょうの出題：復習を優先しつつ、新しい字も最低2字は入れる */
 function buildQueue(p) {
@@ -258,8 +260,8 @@ const TROPHIES = [
   { id: 'kansleep', icon: '😵', name: 'カン君を ノックアウト', desc: 'すごすぎて カン君が ぶったおれた', secret: true, ok: ev('kansleep') },
   { id: 'erase', icon: '🧽', name: 'けしゴム マスター', desc: '「ぜんぶけす」を つかっても ごうかく', secret: true, ok: ev('erase') },
   ...GRADES.flatMap((g) => [
-    { id: `g${g}all`, icon: '🏅', name: `小${g} ぜんぶ ごうかく`, desc: `小${g}の かん字を ぜんぶ 1回 ごうかく`, grade: g, ok: (s) => s.g[g].n > 0 && s.g[g].passed >= s.g[g].n },
-    { id: `g${g}master`, icon: '🏆', name: `小${g} かん字マスター`, desc: `小${g}の かん字を ぜんぶ ★マスター`, grade: g, big: true, ok: (s) => s.g[g].n > 0 && s.g[g].mastered >= s.g[g].n },
+    { id: `g${g}all`, icon: '🏅', name: `${gname(g)} ぜんぶ ごうかく`, desc: `${gname(g)}の かん字を ぜんぶ 1回 ごうかく`, grade: g, ok: (s) => s.g[g].n > 0 && s.g[g].passed >= s.g[g].n },
+    { id: `g${g}master`, icon: '🏆', name: `${gname(g)} かん字マスター`, desc: `${gname(g)}の かん字を ぜんぶ ★マスター`, grade: g, big: true, ok: (s) => s.g[g].n > 0 && s.g[g].mastered >= s.g[g].n },
   ]),
 ];
 function checkTrophies(ctx = {}) {
@@ -314,6 +316,8 @@ function showTrophies(list, done) {
 
 // ───────── クラウド同期 ─────────
 let syncing = false, pushTimer = null, inStudy = false, syncMsg = '', curView = null, pendingReload = false;
+let holdUntil = 0; // とびだす演出が おわる時刻。それまで つぎの字の 計時を はじめない
+const CUT_MS = 2400;
 const cloudOn = () => cloudReady() && !!DB.family;
 const pickCard = (a, b) => (!a ? b : !b ? a : a.n !== b.n ? (a.n > b.n ? a : b) : a.due >= b.due ? a : b);
 const keysOf = (x, y) => new Set([...Object.keys(x || {}), ...Object.keys(y || {})]);
@@ -396,7 +400,7 @@ function viewProfiles() {
   const rows = R.map(({ p, s }, i) => `<button class="rank r${i + 1}" data-act="pick" data-id="${p.id}">
       <span class="rno"><i>${['👑', '🥈', '🥉'][i] || ''}</i><b>${i + 1}</b><small>位</small></span>
       <span class="rav">${p.avatar}</span>
-      <span class="rmain"><span class="rname">${esc(p.name)}<small>${[...p.grades].sort().map((g) => '小' + g).join('・')}</small></span>
+      <span class="rmain"><span class="rname">${esc(p.name)}<small>${[...p.grades].sort(byNum).map(gname).join('・')}</small></span>
         <span class="rbar"><i style="width:${(s.passed / top) * 100}%"></i></span></span>
       <span class="rnum"><b>${s.passed}</b><small>字 おぼえた</small></span>
       <span class="rsub"><span>💰 ${fmtZ(p.zeni || 0)}</span><span>🔥 ${s.streak}日　★ ${s.mastered}</span></span></button>`).join('');
@@ -450,7 +454,7 @@ function viewProfileForm(p) {
     <h2>${p ? 'プロフィールを なおす' : 'あたらしい プロフィール'}</h2>
     <label class="fld">なまえ<input id="pn" type="text" maxlength="12" value="${esc(cur.name)}" placeholder="なまえ" autocomplete="off"></label>
     <div class="fld">アイコン<div class="avs">${AVATARS.map((a) => `<button class="av ${a === cur.avatar ? 'on' : ''}" data-act="av" data-a="${a}">${a}</button>`).join('')}</div></div>
-    <div class="fld">べんきょうする 学年<div class="grs">${GRADES.map((g) => `<label class="chk"><input type="checkbox" value="${g}" ${cur.grades.includes(g) ? 'checked' : ''}>小${g}（${GL[g].length}字）</label>`).join('')}</div></div>
+    <div class="fld">べんきょうする 学年<div class="grs">${GRADES.map((g) => `<label class="chk"><input type="checkbox" value="${g}" ${cur.grades.includes(g) ? 'checked' : ''}>${gname(g)}（${GL[g].length}字）</label>`).join('')}</div></div>
     <div class="row"><button class="btn" data-act="cancel">やめる</button><button class="btn primary" data-act="ok">けってい</button></div>
   </div>`;
   let avatar = cur.avatar;
@@ -511,9 +515,9 @@ function viewHome() {
   let kdmg = 0;
   if (P.kanSleep === t) { talk = `ピヨピヨ… ${esc(P.name)}に ボコボコに されて たおれています…（「もっとやる」で もう1回 しょうぶ できるよ）`; kmood = 'ko'; }
   else if (P.kanSleep === addDays(t, -1)) { talk = `いてて… きのうは ${esc(P.name)}に ボコボコに されたよ。きょうこそ まけないぞ！`; kmood = 'fire'; kdmg = 1; }
-  const grades = [...P.grades].sort().map((g) => {
+  const grades = [...P.grades].sort(byNum).map((g) => {
     const x = s.g[g], rest = x.n - x.mastered - x.ok - x.learning;
-    return `<div class="gst"><div class="gl">小${g}<small>${Math.round((x.passed / x.n) * 100)}%　${x.passed} ／ ${x.n}字 ごうかく</small></div>
+    return `<div class="gst"><div class="gl">${gname(g)}<small>${Math.round((x.passed / x.n) * 100)}%　${x.passed} ／ ${x.n}字 ごうかく</small></div>
       <div class="seg"><i class="s-star" style="flex:${x.mastered}"></i><i class="s-ok" style="flex:${x.ok}"></i><i class="s-learn" style="flex:${x.learning}"></i><i class="s-rest" style="flex:${rest}"></i></div>
       <div class="gleg"><span><i class="s-star"></i>★マスター <b>${x.mastered}</b></span><span><i class="s-ok"></i>ごうかく <b>${x.ok}</b></span><span><i class="s-learn"></i>がくしゅう中 <b>${x.learning}</b></span><span><i class="s-rest"></i>まだ <b>${rest}</b></span></div></div>`;
   }).join('');
@@ -577,7 +581,7 @@ function viewStudy(ctx) {
       <div class="cnt">${S.pos + 1} / ${S.queue.length}</div></header>
     <div class="smain">
       <section class="prompt">
-        <div class="tag">${practice ? '✏️ れんしゅう（きろくには のこりません）' : isNew ? '🆕 あたらしい字' : '🔁 ふくしゅう'}　小${D.g}</div>
+        <div class="tag">${practice ? '✏️ れんしゅう（きろくには のこりません）' : isNew ? '🆕 あたらしい字' : '🔁 ふくしゅう'}　${gname(D.g)}</div>
         <div class="timer"><div class="tbar"><i id="tfill"></i></div><span id="tnum">0.0</span><small>びょう</small></div>
         <div class="yomi">${esc(D.y)}</div>
         <ul class="exs" id="exs">${D.ex.map(([w, r]) => `<li><ruby>${esc(maskWord(w, k))}<rt>${esc(r)}</rt></ruby></li>`).join('')}</ul>
@@ -605,7 +609,7 @@ function viewStudy(ctx) {
   const say = (t, mood = 'normal') => {
     $('#kanbox').innerHTML = ko() ? kanSay(`ピヨピヨ… ${t}`, 'ko', 'sm') : kanSay(t, dmg() === 2 && ['normal', 'happy', 'think'].includes(mood) ? 'dizzy' : mood, 'sm', dmg());
   };
-  const cutIn = (t, mood) => { if (!ko()) { kanCutIn(t, mood); S.amaze = (S.amaze || 0) + 1; } };
+  const cutIn = (t, mood) => { if (!ko()) { kanCutIn(t, mood); holdUntil = Math.max(holdUntil, performance.now() + CUT_MS); S.amaze = (S.amaze || 0) + 1; } };
   const setMsg = (t, cls = '') => {
     if (!t) { if (warned) { warned = false; say('そう、その ちょうし！', 'happy'); } return; }
     warned = cls === 'warn'; say(esc(t), warned ? 'sad' : 'normal');
@@ -666,7 +670,7 @@ function viewStudy(ctx) {
     return true;
   };
   pad.addEventListener('pointerdown', (e) => {
-    if (c.mode === 'result' || drawing || !accept(e)) return;
+    if (c.mode === 'result' || c.mode === 'wait' || drawing || !accept(e)) return;
     e.preventDefault();
     try { pad.setPointerCapture(e.pointerId); } catch { /* 合成イベント */ }
     drawing = { id: e.pointerId, pts: [pt(e)] };
@@ -814,6 +818,7 @@ function viewStudy(ctx) {
           S.ko = true; P.kanSleep = today(); events.push('kansleep');
           P.koDay = P.koDay && P.koDay.d === today() ? { d: today(), n: P.koDay.n + 1 } : { d: today(), n: 1 };
           if (P.koDay.n >= 2) events.push('ko2');
+          holdUntil = Math.max(holdUntil, performance.now() + 2400 + CUT_MS);
           setTimeout(() => { SND.fail(); kanCutIn(`カン君、ノックアウト！！<small>${esc(P.name)}の かち！ つよすぎる…</small>`, 'ko'); say('ま、まいった…', 'ko'); }, 2400);
         } else if (before < HURT2 && now >= HURT2) say(`ぐはっ！ ${esc(P.name)}、つよすぎ… も、もう ボコボコ… ヨロヨロ〜`, 'dizzy');
         else if (before < HURT1 && now >= HURT1) say('いてっ！ すごすぎて たんこぶが できた…！', 'shock');
@@ -883,8 +888,11 @@ function viewStudy(ctx) {
 
   say(!practice && S.extra && S.pos === 0 && P.kanSleep === today() ? 'ふっかつ！ おかわり しょうぶだ！ こんどは まけないぞ！' : practice ? 'れんしゅうだよ。きろくには のこらないから、気楽に かこう！' : isNew ? 'あたらしい字だよ。よみを 見て かいてみよう！' : 'おぼえてるかな？ 思い出して かこう！');
   setKaku();
-  c.t0 = performance.now();
-  tick();
+  // 前の字の とびだす演出が のこっていたら、消えてから スタート
+  const startClock = () => { if (curView !== viewStudy || c.mode !== 'wait') return; c.mode = 'test'; c.t0 = performance.now(); tick(); };
+  const wait = holdUntil - performance.now();
+  if (wait > 0) { c.mode = 'wait'; $('#padwrap').classList.add('waiting'); setTimeout(() => { const w = $('#padwrap'); if (w) w.classList.remove('waiting'); startClock(); }, wait); }
+  else { c.t0 = performance.now(); tick(); }
 }
 
 function finishSession() {
@@ -928,12 +936,12 @@ function viewSummary({ first, got, bonus }) {
 const lvClass = (c) => (!c ? 'l-new' : c.lv >= MASTER_LV ? 'l-star' : c.lv === 0 ? 'l0' : 'l' + c.lv);
 let zukanGrade = null;
 function viewZukan() {
-  const grades = [...P.grades].sort();
+  const grades = [...P.grades].sort(byNum);
   if (!grades.includes(zukanGrade)) zukanGrade = grades[0];
   const g = zukanGrade, s = stats(P).g[g];
   app.innerHTML = `<div class="page">
     <header class="top"><button class="btn back" data-act="home">← もどる</button><h2>かん字ずかん</h2>
-      <div class="tabs">${grades.map((x) => `<button class="tab ${x === g ? 'on' : ''}" data-act="tab" data-g="${x}">小${x}</button>`).join('')}</div></header>
+      <div class="tabs">${grades.map((x) => `<button class="tab ${x === g ? 'on' : ''}" data-act="tab" data-g="${x}">${gname(x)}</button>`).join('')}</div></header>
     <div class="zhead"><div class="ring" style="--p:${(s.passed / s.n) * 100}"><b>${s.passed}</b><small>／${s.n}</small></div>
       <div><div class="zt">ごうかく ${s.passed}字　★マスター ${s.mastered}字</div>
       <div class="legend"><i class="l-new"></i>まだ <i class="l0"></i>れんしゅう中 <i class="l1"></i><i class="l2"></i><i class="l3"></i>ごうかく1〜3回 <i class="l-star"></i>★マスター</div></div></div>
@@ -956,7 +964,7 @@ function showKanji(k, back = viewZukan) {
       ${D.s.map((d, i) => `<path d="${d}" pathLength="1" class="model m-play" style="animation-delay:${i * 0.45}s"/>`).join('')}</svg>
     <div class="kinfo"><div class="yomi sm">${esc(D.y)}</div>
       <ul class="exs">${D.ex.map(([w, r]) => `<li><ruby>${esc(w)}<rt>${esc(r)}</rt></ruby></li>`).join('')}</ul>
-      <p>${D.s.length}画　小${D.g}</p>
+      <p>${D.s.length}画　${gname(D.g)}</p>
       <p class="ktip">💡 ${kanjiTip(D.s.map(samplePath)).text}</p>
       ${c ? `<p>ごうかく ${c.okc}回 ／ ${c.n}回${c.best != null ? `　ベスト ${sec(c.best)}びょう` : ''}</p>
         <p>${c.lv >= MASTER_LV ? '★マスター　' : ''}つぎは ${dayDiff(c.due, today()) <= 0 ? 'きょう' : dayDiff(c.due, today()) + '日ご'}</p><div class="hist">${hist}</div>` : '<p>まだ れんしゅうしていません</p>'}
@@ -1065,7 +1073,7 @@ function viewSettings() {
       <h3>${P.avatar} ${esc(P.name)}</h3>
       <label class="fld inline">1日の字数<select id="daily">${opt([5, 8, 10, 12, 15, 20], P.daily, (x) => x + '字')}</select></label>
       <label class="fld inline">合格タイム<select id="limit">${opt([8, 10, 12, 15, 20, 30], P.limit, (x) => x + '秒以内')}</select></label>
-      <p class="note">学年：${[...P.grades].sort().map((g) => '小' + g).join('・')}</p>
+      <p class="note">学年：${[...P.grades].sort(byNum).map(gname).join('・')}</p>
       <div class="row"><button class="btn" data-act="edit">名前・学年を変える</button><button class="btn danger" data-act="del">${cloudOn() ? 'この端末から外す' : 'このプロフィールを消す'}</button></div>
     </section>
     <section class="card">
@@ -1096,7 +1104,7 @@ function viewSettings() {
       <input type="file" id="file" accept="application/json,.json" hidden>
     </section>
     <div class="row"><button class="btn ghost" data-act="about">バージョン・更新履歴（v${VERSION}）</button></div>
-    <p class="note">筆順データ: <a href="https://kanjivg.tagaini.net/" target="_blank" rel="noopener">KanjiVG</a> © Ulrich Apel（CC BY-SA 3.0）。字形は教科書体と細部が異なる場合があります。</p>
+    <p class="note">筆順データ: <a href="https://kanjivg.tagaini.net/" target="_blank" rel="noopener">KanjiVG</a> © Ulrich Apel（CC BY-SA 3.0）。字形は教科書体と細部が異なる場合があります。<br>中学以上のよみ・例語: <a href="https://www.edrdg.org/" target="_blank" rel="noopener">KANJIDIC2 / JMdict</a> © EDRDG（CC BY-SA 4.0）から自動で選んだものです。</p>
   </div>`;
   app.onchange = (e) => {
     const id = e.target.id, v = e.target.value;
@@ -1156,8 +1164,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.3.3';
+const VERSION = '1.4.0';
 const HISTORY = [
+  ['1.4.0', '2026-11-16', ['中学の かん字を追加：中1（313字）・中2（284字）・中3（328字）と、高校（常用漢字ののこり 185字）。小3からあわせて 1896字', 'とびだす演出が 消えてから、つぎの字の 時間を 数えはじめるように']],
   ['1.3.3', '2026-11-16', ['新しい字が出る順番を、あいうえお順から 人ごとにちがう ランダムな順に変更', '1回の出題の中でも、ふくしゅうと新しい字をまぜて出すように']],
   ['1.3.2', '2026-11-16', ['カン君が たおれるまでを 早く（ごうかくで1ダメージ、Sランクで2ダメージ）', '「もっとやる」の5字でも カン君が ふっかつして、もう1回 ノックアウトできるように']],
   ['1.3.1', '2026-11-16', ['人がいない新しい端末でも、最初の画面から合言葉を入れて記録をよびだせるように', '新しい版が出たら自動で読みこみ直すように（古い版が残りつづける問題を修正）', '最初の画面にバージョン番号を表示', 'クラウドの記録はアプリから消せないように（消せるのは管理者だけ）', 'カン君がボコボコになってノックアウトされる演出']],

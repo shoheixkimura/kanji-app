@@ -370,3 +370,5 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
 .linkbtn { color: var(--pri-d); text-decoration: underline; font-size: inherit; }
 
 .ver { color: #b9b09c; font-size: 12px; margin-top: 18px; }
+
+.padwrap.waiting #pad { opacity: .55; }
