@@ -357,3 +357,12 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
 @keyframes snot { 50% { transform: scale(1.5); } }
 @keyframes zzz { 0% { opacity: .2; transform: translateY(4px); } 50% { opacity: 1; } 100% { opacity: .2; transform: translateY(-4px); } }
 .cut-sleep .cutband { background: linear-gradient(90deg, #14213d, #3a5a9c, #14213d); }
+
+/* ── カン君：ダメージとノックアウト ── */
+.dmg2 .kanbody { animation: kandizzy 1.1s ease-in-out infinite; transform-origin: 50% 100%; transform-box: fill-box; }
+.kan-ko .kanbody { animation: kanko .7s cubic-bezier(.3, 1.5, .5, 1) forwards; transform-origin: 50% 90%; transform-box: fill-box; }
+.kan-ko .orbit { animation: orbit 1.2s linear infinite; transform-origin: 50px 16px; }
+@keyframes kanko { 0% { transform: rotate(0); } 60% { transform: rotate(100deg) translateY(4px); } 80% { transform: rotate(82deg); } 100% { transform: rotate(90deg) translateY(2px); } }
+@keyframes orbit { 0% { transform: translateX(-10px); } 50% { transform: translateX(10px); } 100% { transform: translateX(-10px); } }
+.cut-ko .cutband { background: linear-gradient(90deg, #3a0d12, #c2262e, #3a0d12); }
+.cut-ko .cuttext { animation: cuttext 2.3s ease-out forwards, kanshake .1s linear 6; }

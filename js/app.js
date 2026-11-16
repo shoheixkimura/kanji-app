@@ -242,7 +242,7 @@ const TROPHIES = [
   { id: 'early', icon: '🌅', name: 'はやおき チャンピオン', desc: '朝 7時より前に やりきる', secret: true, ok: ev('early') },
   { id: 'nana', icon: '🪆', name: '七ころび 八おき', desc: '3回 ✕だった字に ついに かつ', secret: true, ok: ev('nana') },
   { id: 'best3', icon: '📈', name: 'きのうの じぶんに かつ', desc: 'じこベストを 1日に 3回 こうしん', secret: true, ok: ev('best3') },
-  { id: 'kansleep', icon: '😴', name: 'カン君を ねこませた', desc: 'すごすぎて カン君が おどろきつかれた', secret: true, ok: ev('kansleep') },
+  { id: 'kansleep', icon: '😵', name: 'カン君を ノックアウト', desc: 'すごすぎて カン君が ぶったおれた', secret: true, ok: ev('kansleep') },
   { id: 'erase', icon: '🧽', name: 'けしゴム マスター', desc: '「ぜんぶけす」を つかっても ごうかく', secret: true, ok: ev('erase') },
   ...GRADES.flatMap((g) => [
     { id: `g${g}all`, icon: '🏅', name: `小${g} ぜんぶ ごうかく`, desc: `小${g}の かん字を ぜんぶ 1回 ごうかく`, grade: g, ok: (s) => s.g[g].n > 0 && s.g[g].passed >= s.g[g].n },
@@ -462,8 +462,9 @@ function viewHome() {
     talk = 'きょうも えらい！ また あした まってるよ。';
   }
   let kmood = st.kind === 'done' ? 'happy' : 'normal';
-  if (P.kanSleep === t) { talk = 'zzz… むにゃ… （おどろきつかれて ねています。あしたには 元気に なるよ）'; kmood = 'sleep'; }
-  else if (P.kanSleep === addDays(t, -1)) { talk = `ふぅ、よく ねた！ きのうは ${esc(P.name)}が すごすぎて ねこんじゃったよ。きょうは まけないぞ！`; kmood = 'cool'; }
+  let kdmg = 0;
+  if (P.kanSleep === t) { talk = `ピヨピヨ… ${esc(P.name)}に ボコボコに されて たおれています…（あしたには ふっかつ するよ）`; kmood = 'ko'; }
+  else if (P.kanSleep === addDays(t, -1)) { talk = `いてて… きのうは ${esc(P.name)}に ボコボコに されたよ。きょうこそ まけないぞ！`; kmood = 'fire'; kdmg = 1; }
   const grades = [...P.grades].sort().map((g) => {
     const x = s.g[g], rest = x.n - x.mastered - x.ok - x.learning;
     return `<div class="gst"><div class="gl">小${g}<small>${Math.round((x.passed / x.n) * 100)}%　${x.passed} ／ ${x.n}字 ごうかく</small></div>
@@ -475,7 +476,7 @@ function viewHome() {
     <header class="top"><button class="who" data-act="switch"><span>${P.avatar}</span>${esc(P.name)}<small>きりかえ</small></button>
       <div class="chips">${R.length > 1 ? `<span class="chip rankc">${['👑', '🥈', '🥉'][myRank - 1] || '🏅'} かぞく ${myRank}位</span>` : ''}<span class="chip fire">🔥 ${s.streak}日れんぞく</span><span class="chip">🏆 ${Object.keys(P.trophies).length}</span></div></header>
     <section class="wallet"><span class="wicon">💰</span><b>${fmtZ(P.zeni || 0)}</b><small>ゼニー</small><span class="wtitle">${ztitle(P.zeni || 0)}</span></section>
-    <section class="hero">${kanSay(talk, kmood)}${main}</section>
+    <section class="hero">${kanSay(talk, kmood, '', kdmg)}${main}</section>
     <section class="week">${week.join('')}</section>
     <p class="wsum">この7日間　✏️ <b>${wk}</b>字 れんしゅう　◎ <b>${wkOk}</b>字 ごうかく</p>
     <section class="card">${grades}</section>
@@ -550,9 +551,13 @@ function viewStudy(ctx) {
 
   const pad = $('#pad'), gInk = $('#ink'), gModel = $('#model'), gFx = $('#fx'), curEl = $('#cur');
   let warned = false;
-  const asleep = () => P.kanSleep === today();
-  const say = (t, mood = 'normal') => { $('#kanbox').innerHTML = asleep() ? kanSay(`zzz… むにゃ… ${t}`, 'sleep', 'sm') : kanSay(t, mood, 'sm'); };
-  const cutIn = (t, mood) => { if (!asleep()) { kanCutIn(t, mood); S.amaze = (S.amaze || 0) + 1; } };
+  // カン君のダメージ：すごい成績のたびに たまり、12で ノックアウト（その日は たおれたまま）
+  const ko = () => P.kanSleep === today();
+  const dmg = () => (ko() ? 2 : (S.amaze || 0) >= 8 ? 2 : (S.amaze || 0) >= 4 ? 1 : 0);
+  const say = (t, mood = 'normal') => {
+    $('#kanbox').innerHTML = ko() ? kanSay(`ピヨピヨ… ${t}`, 'ko', 'sm') : kanSay(t, dmg() === 2 && ['normal', 'happy', 'think'].includes(mood) ? 'dizzy' : mood, 'sm', dmg());
+  };
+  const cutIn = (t, mood) => { if (!ko()) { kanCutIn(t, mood); S.amaze = (S.amaze || 0) + 1; } };
   const setMsg = (t, cls = '') => {
     if (!t) { if (warned) { warned = false; say('そう、その ちょうし！', 'happy'); } return; }
     warned = cls === 'warn'; say(esc(t), warned ? 'sad' : 'normal');
@@ -751,13 +756,18 @@ function viewStudy(ctx) {
       else if (hard) say(`${n}画も あるのに かけた！ すごい！`, 'wow');
       else if (rank === 'S') say('はやい！ Sランクだ！', 'wow');
       else say('いいね、その ちょうし！', 'happy');
-      // おどろきすぎると つかれて、さいごは ねこんでしまう（つぎの日には 元気）
-      if (!practice && !asleep()) {
+      // すごい成績は カン君への「こうげき」。たんこぶ → ボコボコで ヨロヨロ → ノックアウト（つぎの日には ふっかつ）
+      if (!practice && !ko()) {
+        const before = S.amaze0 || 0;
         if (rank === 'S') S.amaze = (S.amaze || 0) + 1;
-        if (S.amaze >= 12) {
+        const now = S.amaze || 0;
+        S.amaze0 = now;
+        if (now >= 12) {
           P.kanSleep = today(); events.push('kansleep');
-          setTimeout(() => { kanCutIn('カン君、おどろきつかれて ダウン…<small>zzz… あしたには 元気に なるよ</small>', 'sleep'); say('もう おどろけない…', 'sleep'); }, 2400);
-        } else if (S.amaze >= 7) say(`${esc(P.name)}が すごすぎて…おどろきつかれて きた… ふらふら〜`, 'dizzy');
+          setTimeout(() => { SND.fail(); kanCutIn(`カン君、ノックアウト！！<small>${esc(P.name)}の かち！ つよすぎる…</small>`, 'ko'); say('ま、まいった…', 'ko'); }, 2400);
+        } else if (before < 8 && now >= 8) say(`ぐはっ！ ${esc(P.name)}、つよすぎ… も、もう ボコボコ… ヨロヨロ〜`, 'dizzy');
+        else if (before < 4 && now >= 4) say('いてっ！ すごすぎて たんこぶが できた…！', 'shock');
+        else if (now >= 8 && rank === 'S') say(['ぐふっ…まだ くるの！？', 'ひぃ〜 もう かんべんして…', 'あ、足が ふらふら する…'][now % 3], 'dizzy');
       }
       $('#stamp').innerHTML = `<div class="rankstamp rk-${rank}">${rank}</div>`;
       $('#padwrap').classList.add('win');
@@ -1095,7 +1105,7 @@ function viewSettings() {
 // ───────── バージョン・更新履歴 ─────────
 const VERSION = '1.3.0';
 const HISTORY = [
-  ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'すごい成績を出しすぎると、カン君がおどろきつかれて ねこむ（つぎの日には元気）', 'クラウド同期（複数の端末で記録を共有）', 'バージョン・更新履歴のページ']],
+  ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'すごい成績を出しすぎると、カン君がボコボコになってノックアウトされる（つぎの日には復活）', 'クラウド同期（複数の端末で記録を共有）', 'バージョン・更新履歴のページ']],
   ['1.2.0', '2026-11-15', ['小3の200字を追加（小3〜小6 計786字）', '書きかけを消す「1画もどす／ぜんぶけす」', 'ずかんから字をえらんで練習', 'ランク・コンボなどの演出', '部首べつ・画数べつなどの「ぶんせき」と にがて特訓', 'トロフィーを約60種に（ひみつトロフィーなど）', 'アイコンに干支12種ほかを追加']],
   ['1.0.0', '2026-11-15', ['最初の公開。小4〜小6の書き取り、筆順の判定、10秒以内で合格、忘却曲線による復習、プロフィール、ずかん、トロフィー']],
 ];
