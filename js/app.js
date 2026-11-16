@@ -242,6 +242,7 @@ const TROPHIES = [
   { id: 'early', icon: '🌅', name: 'はやおき チャンピオン', desc: '朝 7時より前に やりきる', secret: true, ok: ev('early') },
   { id: 'nana', icon: '🪆', name: '七ころび 八おき', desc: '3回 ✕だった字に ついに かつ', secret: true, ok: ev('nana') },
   { id: 'best3', icon: '📈', name: 'きのうの じぶんに かつ', desc: 'じこベストを 1日に 3回 こうしん', secret: true, ok: ev('best3') },
+  { id: 'ko2', icon: '💥', name: 'ダブル ノックアウト', desc: '1日に 2回 カン君を たおす', secret: true, ok: ev('ko2') },
   { id: 'kansleep', icon: '😵', name: 'カン君を ノックアウト', desc: 'すごすぎて カン君が ぶったおれた', secret: true, ok: ev('kansleep') },
   { id: 'erase', icon: '🧽', name: 'けしゴム マスター', desc: '「ぜんぶけす」を つかっても ごうかく', secret: true, ok: ev('erase') },
   ...GRADES.flatMap((g) => [
@@ -496,7 +497,7 @@ function viewHome() {
   }
   let kmood = st.kind === 'done' ? 'happy' : 'normal';
   let kdmg = 0;
-  if (P.kanSleep === t) { talk = `ピヨピヨ… ${esc(P.name)}に ボコボコに されて たおれています…（あしたには ふっかつ するよ）`; kmood = 'ko'; }
+  if (P.kanSleep === t) { talk = `ピヨピヨ… ${esc(P.name)}に ボコボコに されて たおれています…（「もっとやる」で もう1回 しょうぶ できるよ）`; kmood = 'ko'; }
   else if (P.kanSleep === addDays(t, -1)) { talk = `いてて… きのうは ${esc(P.name)}に ボコボコに されたよ。きょうこそ まけないぞ！`; kmood = 'fire'; kdmg = 1; }
   const grades = [...P.grades].sort().map((g) => {
     const x = s.g[g], rest = x.n - x.mastered - x.ok - x.learning;
@@ -585,8 +586,10 @@ function viewStudy(ctx) {
   const pad = $('#pad'), gInk = $('#ink'), gModel = $('#model'), gFx = $('#fx'), curEl = $('#cur');
   let warned = false;
   // カン君のダメージ：すごい成績のたびに たまり、12で ノックアウト（その日は たおれたまま）
-  const ko = () => P.kanSleep === today();
-  const dmg = () => (ko() ? 2 : (S.amaze || 0) >= 8 ? 2 : (S.amaze || 0) >= 4 ? 1 : 0);
+  // 1回の出題（きょうのぶん／おかわり）が 1ラウンド。字数に合わせて たおれやすさを 決める
+  const KO_AT = Math.max(5, Math.round(S.queue.length * 1.2)), HURT2 = Math.ceil((KO_AT * 2) / 3), HURT1 = Math.ceil(KO_AT / 3);
+  const ko = () => !!S.ko;
+  const dmg = () => (ko() ? 2 : (S.amaze || 0) >= HURT2 ? 2 : (S.amaze || 0) >= HURT1 ? 1 : 0);
   const say = (t, mood = 'normal') => {
     $('#kanbox').innerHTML = ko() ? kanSay(`ピヨピヨ… ${t}`, 'ko', 'sm') : kanSay(t, dmg() === 2 && ['normal', 'happy', 'think'].includes(mood) ? 'dizzy' : mood, 'sm', dmg());
   };
@@ -792,15 +795,17 @@ function viewStudy(ctx) {
       // すごい成績は カン君への「こうげき」。たんこぶ → ボコボコで ヨロヨロ → ノックアウト（つぎの日には ふっかつ）
       if (!practice && !ko()) {
         const before = S.amaze0 || 0;
-        if (rank === 'S') S.amaze = (S.amaze || 0) + 1;
+        S.amaze = (S.amaze || 0) + (rank === 'S' ? 2 : 1); // ごうかくで 1ダメージ、Sランクは 2ダメージ
         const now = S.amaze || 0;
         S.amaze0 = now;
-        if (now >= 12) {
-          P.kanSleep = today(); events.push('kansleep');
+        if (now >= KO_AT) {
+          S.ko = true; P.kanSleep = today(); events.push('kansleep');
+          P.koDay = P.koDay && P.koDay.d === today() ? { d: today(), n: P.koDay.n + 1 } : { d: today(), n: 1 };
+          if (P.koDay.n >= 2) events.push('ko2');
           setTimeout(() => { SND.fail(); kanCutIn(`カン君、ノックアウト！！<small>${esc(P.name)}の かち！ つよすぎる…</small>`, 'ko'); say('ま、まいった…', 'ko'); }, 2400);
-        } else if (before < 8 && now >= 8) say(`ぐはっ！ ${esc(P.name)}、つよすぎ… も、もう ボコボコ… ヨロヨロ〜`, 'dizzy');
-        else if (before < 4 && now >= 4) say('いてっ！ すごすぎて たんこぶが できた…！', 'shock');
-        else if (now >= 8 && rank === 'S') say(['ぐふっ…まだ くるの！？', 'ひぃ〜 もう かんべんして…', 'あ、足が ふらふら する…'][now % 3], 'dizzy');
+        } else if (before < HURT2 && now >= HURT2) say(`ぐはっ！ ${esc(P.name)}、つよすぎ… も、もう ボコボコ… ヨロヨロ〜`, 'dizzy');
+        else if (before < HURT1 && now >= HURT1) say('いてっ！ すごすぎて たんこぶが できた…！', 'shock');
+        else if (now >= HURT2 && rank === 'S') say(['ぐふっ…まだ くるの！？', 'ひぃ〜 もう かんべんして…', 'あ、足が ふらふら する…'][now % 3], 'dizzy');
       }
       $('#stamp').innerHTML = `<div class="rankstamp rk-${rank}">${rank}</div>`;
       $('#padwrap').classList.add('win');
@@ -864,7 +869,7 @@ function viewStudy(ctx) {
     },
   });
 
-  say(practice ? 'れんしゅうだよ。きろくには のこらないから、気楽に かこう！' : isNew ? 'あたらしい字だよ。よみを 見て かいてみよう！' : 'おぼえてるかな？ 思い出して かこう！');
+  say(!practice && S.extra && S.pos === 0 && P.kanSleep === today() ? 'ふっかつ！ おかわり しょうぶだ！ こんどは まけないぞ！' : practice ? 'れんしゅうだよ。きろくには のこらないから、気楽に かこう！' : isNew ? 'あたらしい字だよ。よみを 見て かいてみよう！' : 'おぼえてるかな？ 思い出して かこう！');
   setKaku();
   c.t0 = performance.now();
   tick();
@@ -1139,8 +1144,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.3.1';
+const VERSION = '1.3.2';
 const HISTORY = [
+  ['1.3.2', '2026-11-16', ['カン君が たおれるまでを 早く（ごうかくで1ダメージ、Sランクで2ダメージ）', '「もっとやる」の5字でも カン君が ふっかつして、もう1回 ノックアウトできるように']],
   ['1.3.1', '2026-11-16', ['人がいない新しい端末でも、最初の画面から合言葉を入れて記録をよびだせるように', '新しい版が出たら自動で読みこみ直すように（古い版が残りつづける問題を修正）', '最初の画面にバージョン番号を表示', 'クラウドの記録はアプリから消せないように（消せるのは管理者だけ）', 'カン君がボコボコになってノックアウトされる演出']],
   ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'すごい成績を出しすぎると、カン君がボコボコになってノックアウトされる（つぎの日には復活）', 'クラウド同期（複数の端末で記録を共有。クラウドの記録を消せるのは管理者だけ）', 'バージョン・更新履歴のページ']],
   ['1.2.0', '2026-11-15', ['小3の200字を追加（小3〜小6 計786字）', '書きかけを消す「1画もどす／ぜんぶけす」', 'ずかんから字をえらんで練習', 'ランク・コンボなどの演出', '部首べつ・画数べつなどの「ぶんせき」と にがて特訓', 'トロフィーを約60種に（ひみつトロフィーなど）', 'アイコンに干支12種ほかを追加']],
