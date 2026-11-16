@@ -95,13 +95,25 @@ function dueList(p) {
   return pool(p).filter((k) => p.cards[k] && p.cards[k].due <= t)
     .sort((a, b) => p.cards[a].due.localeCompare(p.cards[b].due) || p.cards[a].lv - p.cards[b].lv);
 }
-function freshList(p) { return pool(p).filter((k) => !p.cards[k]); }
+/** その人だけの「字が出てくる順番」。学年ごとに、人ごとにちがう順でまぜる（どの端末でも同じ順になる） */
+const orderCache = {};
+function gradeOrder(p, g) {
+  const key = p.id + ':' + g;
+  if (orderCache[key]) return orderCache[key];
+  let h = 2166136261;
+  for (const ch of key) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const rnd = () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const a = [...(GL[g] || [])];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return (orderCache[key] = a);
+}
+function freshList(p) { return [...p.grades].sort().flatMap((g) => gradeOrder(p, g)).filter((k) => !p.cards[k]); }
 
 /** きょうの出題：復習を優先しつつ、新しい字も最低2字は入れる */
 function buildQueue(p) {
   const n = p.daily, due = dueList(p), fresh = freshList(p);
   const nNew = Math.min(fresh.length, Math.max(n - due.length, Math.min(2, n)));
-  return shuffle(due.slice(0, n - nNew)).concat(fresh.slice(0, nNew));
+  return shuffle(due.slice(0, n - nNew).concat(fresh.slice(0, nNew)));
 }
 /** 「もっとやる」：新しい字 → 残りの復習 → 近日中に復習予定の字 */
 function buildExtra(p, n = 5) {
@@ -113,7 +125,7 @@ function buildExtra(p, n = 5) {
       .sort((a, b) => (p.cards[a].due < p.cards[b].due ? -1 : 1));
     q = q.concat(soon.slice(0, n - q.length));
   }
-  return q;
+  return shuffle(q);
 }
 function record(k, ok, ms, miss) {
   const t = today();
@@ -1144,8 +1156,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.3.2';
+const VERSION = '1.3.3';
 const HISTORY = [
+  ['1.3.3', '2026-11-16', ['新しい字が出る順番を、あいうえお順から 人ごとにちがう ランダムな順に変更', '1回の出題の中でも、ふくしゅうと新しい字をまぜて出すように']],
   ['1.3.2', '2026-11-16', ['カン君が たおれるまでを 早く（ごうかくで1ダメージ、Sランクで2ダメージ）', '「もっとやる」の5字でも カン君が ふっかつして、もう1回 ノックアウトできるように']],
   ['1.3.1', '2026-11-16', ['人がいない新しい端末でも、最初の画面から合言葉を入れて記録をよびだせるように', '新しい版が出たら自動で読みこみ直すように（古い版が残りつづける問題を修正）', '最初の画面にバージョン番号を表示', 'クラウドの記録はアプリから消せないように（消せるのは管理者だけ）', 'カン君がボコボコになってノックアウトされる演出']],
   ['1.3.0', '2026-11-16', ['ごほうびを XP・レベルから「ゼニー」に変更（これまでのXPは 1XP＝1万ゼニーで引きつぎ）', 'プロフィール選択を「かぞくランキング」に', 'ホームに 学年べつステータスと 7日間の学習数', '案内キャラ「カン君」と、書き順のきまりのアドバイス', 'まちがえたら すぐ なぞり練習に入るように', '効果音とBGMを分け、プレイ中に切りかえ可能に。音が止まったら自動で復旧', 'プレイ中にプレイヤー名を表示', 'カン君の表情を追加（びっくり・星の目・サングラス・号泣・炎・ゼニー）と、とびだす演出', 'すごい成績を出しすぎると、カン君がボコボコになってノックアウトされる（つぎの日には復活）', 'クラウド同期（複数の端末で記録を共有。クラウドの記録を消せるのは管理者だけ）', 'バージョン・更新履歴のページ']],
