@@ -1,4 +1,4 @@
-// 効果音とBGM。iPadで音が止まったら自動で作り直す。
+// 効果音とBGM。iPadで音が止まったら自動で作り直す（作り直せるのは 画面に さわった瞬間だけ）。
 export const audioCfg = { sfx: true, bgm: true };
 
 let AC = null, sfxG = null, bgmG = null;
@@ -9,23 +9,44 @@ function make() {
   try { if (AC) AC.close().catch(() => {}); } catch { /* 既に閉じている */ }
   AC = new (window.AudioContext || window.webkitAudioContext)();
   sfxG = AC.createGain(); sfxG.gain.value = 1; sfxG.connect(AC.destination);
-  bgmG = AC.createGain(); bgmG.gain.value = 0.55; bgmG.connect(AC.destination);
+  bgmG = AC.createGain(); bgmG.gain.value = audioCfg.bgm ? 0.55 : 0; bgmG.connect(AC.destination);
   nextT = 0; broken = false; stuck = 0; lastCT = -1;
+  // 電話・Siri・ほかのアプリの音で とめられたら、つぎに さわったとき 作り直す
+  AC.onstatechange = () => { if (AC && AC.state === 'interrupted') broken = true; };
+  // 無音を1回 鳴らして、iPad に「この画面は 音を出す」と 知らせる
+  try { const b = AC.createBufferSource(); b.buffer = AC.createBuffer(1, 1, 22050); b.connect(AC.destination); b.start(0); } catch { /* */ }
 }
 
-/** 画面にさわるたびに呼ぶ。止まっていたら再開、こわれていたら作り直す */
-export function ensureAudio() {
+/** 画面にさわるたびに呼ぶ（gesture=true）。止まっていたら再開、こわれていたら作り直す */
+export function ensureAudio(gesture = true) {
   try {
     // 消音スイッチ（サイレントモード）でも鳴るようにする（対応しているSafariのみ）
     if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback';
   } catch { /* 非対応 */ }
   try {
-    if (!AC || AC.state === 'closed' || broken) make();
+    // iPad は さわった瞬間にしか 音の再開を ゆるさないので、作り直しは さわったときだけ
+    if (!AC || AC.state === 'closed' || (broken && gesture)) make();
     if (AC.state !== 'running') AC.resume().catch(() => { broken = true; });
   } catch { /* 音が出せない環境 */ }
 }
-for (const t of ['pointerdown', 'touchend', 'keydown']) document.addEventListener(t, ensureAudio, true);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && AC && AC.state !== 'running') AC.resume().catch(() => { broken = true; }); });
+/** 「音を なおす」：むりやり 作り直して、テストの音を 鳴らす（かならず さわった中で 呼ぶ） */
+export function resetAudio() {
+  broken = true;
+  ensureAudio(true);
+  const was = audioCfg.sfx; audioCfg.sfx = true;
+  tone([[784, 0.1], [1047, 0.18]]);
+  audioCfg.sfx = was;
+  schedule();
+}
+for (const t of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(t, () => ensureAudio(true), true);
+// 画面を とじて もどってきたら、iPad では「動いているのに 音が出ない」ことがあるので、つぎに さわったとき 作り直す
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt > 1000) broken = true;
+  if (AC && AC.state !== 'running') AC.resume().catch(() => { broken = true; });
+});
+window.addEventListener('pageshow', (e) => { if (e.persisted) broken = true; });
 
 // 見はり番：鳴っているはずなのに時計が進んでいなければ「こわれた」と判断し、次にさわったとき作り直す
 setInterval(() => {
@@ -33,7 +54,9 @@ setInterval(() => {
   if (AC.state === 'running') {
     if (AC.currentTime === lastCT) { if (++stuck >= 2) broken = true; } else stuck = 0;
     lastCT = AC.currentTime;
-  } else if (AC.state === 'interrupted' || AC.state === 'suspended') {
+  } else if (AC.state === 'interrupted') {
+    broken = true;
+  } else if (AC.state === 'suspended') {
     AC.resume().catch(() => { broken = true; });
   }
   schedule();
@@ -52,7 +75,7 @@ function note(dest, f, t, d, type, vol) {
 export function tone(seq, type = 'triangle') {
   if (!audioCfg.sfx) return;
   try {
-    ensureAudio();
+    ensureAudio(false);
     let t = AC.currentTime + 0.005;
     for (const [f, d] of seq) { note(sfxG, f, t, d, type, 0.16); t += d * 0.75; }
   } catch { /* 音が出せない環境 */ }

@@ -1,6 +1,6 @@
 import { samplePath, judge, pathLen } from './matcher.js';
-import { tone, audioCfg, setBgm, refreshBgm } from './audio.js';
-import { kanjiTip, mistakeTip } from './tips.js';
+import { tone, audioCfg, setBgm, refreshBgm, resetAudio } from './audio.js';
+import { kanjiTip, mistakeTip, theoryOf, theoryFig, THEORIES } from './tips.js';
 import { kanSay, kanCutIn } from './kan.js';
 import { cloudReady, pullAll, pushProfile } from './cloud.js';
 
@@ -316,8 +316,33 @@ function showTrophies(list, done) {
 
 // ───────── クラウド同期 ─────────
 let syncing = false, pushTimer = null, inStudy = false, syncMsg = '', curView = null, pendingReload = false;
-let holdUntil = 0; // とびだす演出が おわる時刻。それまで つぎの字の 計時を はじめない
 const CUT_MS = 2400;
+// とびだす演出（カットイン）は 前の字の 画面で じゅんばんに 出しきる。つぎの字では すぐ 書きはじめられる
+let cutQ = [], cutCur = null, cutTimer = 0, cutDone = null;
+/** wait ミリ秒 まってから 出す。pre は 出す直前に よぶ（音・カン君のセリフ） */
+function queueCut(text, mood, pre, wait = 0) { cutQ.push({ text, mood, pre, wait }); if (!cutCur) playCut(); }
+function playCut() {
+  const x = cutQ.shift();
+  if (!x) { cutCur = null; const f = cutDone; cutDone = null; if (f) f(); return; }
+  cutCur = { x, el: null };
+  if (x.wait) cutTimer = setTimeout(showCut, x.wait); else showCut();
+}
+function showCut() {
+  const x = cutCur.x;
+  if (x.pre) x.pre();
+  cutCur.el = kanCutIn(x.text, x.mood);
+  cutCur.el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); endCut(); });
+  cutTimer = setTimeout(endCut, CUT_MS);
+}
+/** いまの カットインを おわらせて つぎへ（タップで とばすときも）。待ち中なら すぐ 出す */
+function endCut() {
+  if (!cutCur) return;
+  clearTimeout(cutTimer);
+  if (!cutCur.el) { showCut(); return; }
+  cutCur.el.remove(); cutCur = null; playCut();
+}
+function clearCuts() { cutQ = []; cutDone = null; clearTimeout(cutTimer); if (cutCur && cutCur.el) cutCur.el.remove(); cutCur = null; }
+const cutBusy = () => !!cutCur || cutQ.length > 0;
 const cloudOn = () => cloudReady() && !!DB.family;
 const pickCard = (a, b) => (!a ? b : !b ? a : a.n !== b.n ? (a.n > b.n ? a : b) : a.due >= b.due ? a : b);
 const keysOf = (x, y) => new Set([...Object.keys(x || {}), ...Object.keys(y || {})]);
@@ -391,9 +416,25 @@ function onAct(map) {
 }
 
 // ───────── プロフィール選択（かぞくランキング） ─────────
+/** その日に はじめて ごうかくした字の 数（＝おぼえた字が ふえた数） */
+function gainOn(p, d) {
+  let n = 0;
+  for (const [k, c] of Object.entries(p.cards)) {
+    if (!KD[k]) continue;
+    const oks = c.h.filter((h) => h[1]);
+    if (oks.length && oks.length >= c.okc && oks[0][0] === d) n++; // 記録が けずられた 古い字は のぞく
+  }
+  return n;
+}
 function ranking() {
   return DB.profiles.map((p) => ({ p, s: stats(p) }))
     .sort((a, b) => b.s.passed - a.s.passed || b.s.mastered - a.s.mastered || (b.p.zeni || 0) - (a.p.zeni || 0));
+}
+/** ランキングの「いきおい」：きょう・きのう おぼえた字の ふえた数 */
+function momentum(p) {
+  const t = today(), y = addDays(t, -1), a = gainOn(p, t), b = gainOn(p, y);
+  const cell = (label, n, d) => `<i class="${n ? 'up' : p.log[d] ? '' : 'none'}">${label} <b>${n ? '+' + n : p.log[d] ? '±0' : 'お休み'}</b></i>`;
+  return `<span class="rmom">${a >= 5 && a > b ? '🚀' : a > 0 ? '📈' : '　'}${cell('きょう', a, t)}${cell('きのう', b, y)}</span>`;
 }
 function viewProfiles() {
   const R = ranking(), top = Math.max(1, R.length ? R[0].s.passed : 0);
@@ -401,13 +442,14 @@ function viewProfiles() {
       <span class="rno"><i>${['👑', '🥈', '🥉'][i] || ''}</i><b>${i + 1}</b><small>位</small></span>
       <span class="rav">${p.avatar}</span>
       <span class="rmain"><span class="rname">${esc(p.name)}<small>${[...p.grades].sort(byNum).map(gname).join('・')}</small></span>
-        <span class="rbar"><i style="width:${(s.passed / top) * 100}%"></i></span></span>
+        <span class="rbar"><i style="width:${(s.passed / top) * 100}%"></i></span>${momentum(p)}</span>
       <span class="rnum"><b>${s.passed}</b><small>字 おぼえた</small></span>
-      <span class="rsub"><span>💰 ${fmtZ(p.zeni || 0)}</span><span>🔥 ${s.streak}日　★ ${s.mastered}</span></span></button>`).join('');
+      <span class="rsub"><span>💰 ${fmtZ(p.zeni || 0)}</span><span>🔥 ${s.streak}日れんぞく</span><span>★マスター ${s.mastered}字</span></span></button>`).join('');
   app.innerHTML = `<div class="page narrow center">
     <h1 class="logo">かん字 かきとり<small>かいて おぼえる</small></h1>
     ${kanSay(DB.profiles.length ? 'だれが やる？ なまえを タップしてね！' : 'はじめまして、カン君だよ！ さいしょに つかう人を とうろくしてね。', 'happy', 'mid')}
-    ${DB.profiles.length ? `<h2 class="rtitle">🏆 かぞく ランキング<small>おぼえた かん字の 数で しょうぶ！</small></h2><div class="ranks">${rows}</div>` : ''}
+    ${DB.profiles.length ? `<h2 class="rtitle">🏆 かぞく ランキング<small>おぼえた かん字の 数で しょうぶ！</small></h2><div class="ranks">${rows}</div>
+      <p class="note rlegend">📈 きょう・きのう＝その日に はじめて ごうかくした字の 数　★マスター＝日を あけて 4回 つづけて ごうかくした字</p>` : ''}
     <div class="row"><button class="btn" data-act="add">＋ 人を ついか</button>${cloudReady() && !DB.family ? '<button class="btn" data-act="cloud">☁️ ほかの端末の きろくを よびだす</button>' : ''}</div>
     ${cloudOn() ? `<p class="note">☁️ ${syncMsg ? 'どうきエラー: ' + esc(syncMsg) : DB.lastSync ? 'クラウドと どうきずみ' : 'どうき中…'}　<button class="linkbtn" data-act="resync">いま どうきする</button></p>` : ''}
     <p class="ver">v${VERSION}</p>
@@ -508,7 +550,7 @@ function viewHome() {
     main = `<div class="todo">あと <b>${st.left}</b>字</div><button class="btn primary huge" data-act="resume">つづきから</button>`;
     talk = 'おかえり！ つづきから いこう！';
   } else {
-    main = `<div class="todo done">💮 きょうのぶんは おわり！</div><button class="btn" data-act="more">もっとやる（＋5字）</button>`;
+    main = `<div class="todo done">💮 きょうのぶんは おわり！</div><div class="row"><button class="btn" data-act="more" data-n="5">もっとやる（＋5字）</button><button class="btn" data-act="more" data-n="10">もっとやる（＋10字）</button></div>`;
     talk = 'きょうも えらい！ また あした まってるよ。';
   }
   let kmood = st.kind === 'done' ? 'happy' : 'normal';
@@ -541,7 +583,7 @@ function viewHome() {
     switch: () => go(viewProfiles),
     start: () => begin(buildQueue(P)),
     resume: () => go(viewStudy),
-    more: () => { const q = buildExtra(P); if (q.length) begin(q, true); else alert('れんしゅうできる字が ありません'); },
+    more: (el) => { const q = buildExtra(P, +el.dataset.n || 5); if (q.length) begin(q, true); else alert('れんしゅうできる字が ありません'); },
     zukan: () => go(viewZukan),
     rec: () => go(viewRecords),
     ana: () => go(viewAnalysis),
@@ -609,7 +651,22 @@ function viewStudy(ctx) {
   const say = (t, mood = 'normal') => {
     $('#kanbox').innerHTML = ko() ? kanSay(`ピヨピヨ… ${t}`, 'ko', 'sm') : kanSay(t, dmg() === 2 && ['normal', 'happy', 'think'].includes(mood) ? 'dizzy' : mood, 'sm', dmg());
   };
-  const cutIn = (t, mood) => { if (!ko()) { kanCutIn(t, mood); holdUntil = Math.max(holdUntil, performance.now() + CUT_MS); S.amaze = (S.amaze || 0) + 1; } };
+  const cutIn = (t, mood) => { if (!ko()) { queueCut(t, mood); S.amaze = (S.amaze || 0) + 1; } };
+  /** カットインが おわるまで「つぎへ」を おさえる（おすと カットインを とばせる） */
+  const holdNext = () => {
+    const b = app.querySelector('[data-act="next"]');
+    if (!b || !cutBusy()) return;
+    b.classList.add('held');
+    cutDone = () => { if (b.isConnected) b.classList.remove('held'); };
+  };
+  // まちがえた セオリーの 説明（同じ セオリーで 3回目からは みじかく）
+  const sayTheory = (id) => {
+    const T = THEORIES[id], n = (P.theory && P.theory[id]) || 0;
+    const body = n >= 3 ? `また セオリー${T.no}！ <b class="thname">「${T.name}」</b>おぼえてる？`
+      : `<b class="thname">セオリー${T.no}「${T.name}」</b>${T.text}<small class="thex">おなじ なかま：${T.ex}</small>`;
+    $('#kanbox').innerHTML = kanSay(`<span class="theory">${theoryFig(id)}<span>${c.idx + 1}画目、ちがうよ！<br>${body}</span></span>`, 'think', 'sm theorybox');
+    warned = false; // つぎの画を 正しく 書いても、説明は のこしておく
+  };
   const setMsg = (t, cls = '') => {
     if (!t) { if (warned) { warned = false; say('そう、その ちょうし！', 'happy'); } return; }
     warned = cls === 'warn'; say(esc(t), warned ? 'sad' : 'normal');
@@ -627,7 +684,7 @@ function viewStudy(ctx) {
   };
   const stopTimer = () => { cancelAnimationFrame(c.raf); c.raf = 0; };
   inStudy = true;
-  cleanup = () => { stopTimer(); inStudy = false; };
+  cleanup = () => { stopTimer(); clearCuts(); inStudy = false; };
 
   // お手本の表示
   function drawModel(kind) {
@@ -670,7 +727,7 @@ function viewStudy(ctx) {
     return true;
   };
   pad.addEventListener('pointerdown', (e) => {
-    if (c.mode === 'result' || c.mode === 'wait' || drawing || !accept(e)) return;
+    if (c.mode === 'result' || drawing || !accept(e)) return;
     e.preventDefault();
     try { pad.setPointerCapture(e.pointerId); } catch { /* 合成イベント */ }
     drawing = { id: e.pointerId, pts: [pt(e)] };
@@ -706,7 +763,10 @@ function viewStudy(ctx) {
       const a = 1 / Math.min(c.nAcc, 4); // 書く位置のずれにゆるやかに追従
       c.drift = [c.drift[0] + (r.off[0] * 0.6 - c.drift[0]) * a, c.drift[1] + (r.off[1] * 0.6 - c.drift[1]) * a];
       c.idx++; c.missHere = 0;
-      setMsg('');
+      if (!trace && tip.th && c.idx === tip.strokes[1] + 1 && !c.thMiss && P.theory && P.theory[tip.th]) {
+        const T = THEORIES[tip.th];
+        warned = false; say(`セオリー${T.no}「${T.name}」 ばっちり！`, 'happy');
+      } else setMsg('');
       if (trace) drawModel('trace'); else if (c.hinted) gModel.innerHTML = '';
       if (c.idx >= D.s.length) return trace ? finishTrace() : finishTest();
       setKaku();
@@ -719,11 +779,12 @@ function viewStudy(ctx) {
     SND.miss();
     if (trace) { setMsg('オレンジの線を ● から なぞろう', 'warn'); return; }
     c.miss++; c.missHere++;
-    let why = 'ちがうみたい。もういちど！', type = 'shape';
+    let why = 'ちがうみたい。もういちど！', type = 'shape', th = null;
     if (r.reversed) { why = 'かく むきが ぎゃくだよ'; type = 'rev'; }
-    else { const j = targets.findIndex((t, x) => x > c.idx && judge(pts, t, c.drift).ok); if (j > 0) { why = mistakeTip(targets, c.idx, j); type = 'order'; } }
+    else { const j = targets.findIndex((t, x) => x > c.idx && judge(pts, t, c.drift).ok); if (j > 0) { why = mistakeTip(targets, c.idx, j); type = 'order'; th = theoryOf(targets, c.idx, j); } }
     if (!practice) { P.err = P.err || {}; P.err[type] = (P.err[type] || 0) + 1; }
-    setMsg(`${c.idx + 1}画目：${why}`, 'warn');
+    if (th) { sayTheory(th); c.thMiss = true; P.theory = P.theory || {}; P.theory[th] = (P.theory[th] || 0) + 1; }
+    else setMsg(`${c.idx + 1}画目：${why}`, 'warn');
     if (type === 'order') showHint();
     else if (c.missHere >= 3) { showHint(); setMsg(`${c.idx + 1}画目の ヒントを 見て かこう`, 'warn'); }
   }
@@ -818,8 +879,7 @@ function viewStudy(ctx) {
           S.ko = true; P.kanSleep = today(); events.push('kansleep');
           P.koDay = P.koDay && P.koDay.d === today() ? { d: today(), n: P.koDay.n + 1 } : { d: today(), n: 1 };
           if (P.koDay.n >= 2) events.push('ko2');
-          holdUntil = Math.max(holdUntil, performance.now() + 2400 + CUT_MS);
-          setTimeout(() => { SND.fail(); kanCutIn(`カン君、ノックアウト！！<small>${esc(P.name)}の かち！ つよすぎる…</small>`, 'ko'); say('ま、まいった…', 'ko'); }, 2400);
+          queueCut(`カン君、ノックアウト！！<small>${esc(P.name)}の かち！ つよすぎる…</small>`, 'ko', () => { SND.fail(); say('ま、まいった…', 'ko'); }, cutBusy() ? 0 : 900);
         } else if (before < HURT2 && now >= HURT2) say(`ぐはっ！ ${esc(P.name)}、つよすぎ… も、もう ボコボコ… ヨロヨロ〜`, 'dizzy');
         else if (before < HURT1 && now >= HURT1) say('いてっ！ すごすぎて たんこぶが できた…！', 'shock');
         else if (now >= HURT2 && rank === 'S') say(['ぐふっ…まだ くるの！？', 'ひぃ〜 もう かんべんして…', 'あ、足が ふらふら する…'][now % 3], 'dizzy');
@@ -830,6 +890,7 @@ function viewStudy(ctx) {
       gInk.querySelectorAll('.good').forEach((el, i) => { el.style.animationDelay = i * 0.03 + 's'; el.classList.add('shine'); });
       rank === 'S' ? SND.great() : SND.pass();
       confetti((rank === 'S' ? 45 : rank === 'A' ? 18 : 6) + (S.combo >= 5 ? 30 : 0) + (lv === MASTER_LV ? 40 : 0));
+      holdNext();
     } else {
       S.combo = 0;
       $('#combo').classList.remove('on');
@@ -871,11 +932,12 @@ function viewStudy(ctx) {
     giveup: () => { if (c.mode !== 'test') return; c.gaveUp = true; gInk.innerHTML = ''; finishTest(); },
     undo: () => erase(false),
     clear: () => erase(true),
-    sfx: (el) => { DB.sound = DB.sound === false; applyAudio(); saveLocal(); el.textContent = DB.sound ? '🔊' : '🔇'; el.classList.toggle('off', !DB.sound); },
+    sfx: (el) => { DB.sound = DB.sound === false; applyAudio(); saveLocal(); el.textContent = DB.sound ? '🔊' : '🔇'; el.classList.toggle('off', !DB.sound); if (DB.sound) resetAudio(); },
     bgm: (el) => { DB.bgm = DB.bgm === false; applyAudio(); saveLocal(); el.classList.toggle('off', !DB.bgm); },
-    again: () => go(viewStudy, ctx),
+    again: () => { clearCuts(); go(viewStudy, ctx); },
     next: () => {
       if (c.mode === 'test') return;
+      if (cutBusy()) return endCut(); // カットイン中に おしたら、まず カットインを とばす
       S.pos++;
       if (!practice) save();
       if (S.pos < S.queue.length) return go(viewStudy, ctx);
@@ -888,11 +950,8 @@ function viewStudy(ctx) {
 
   say(!practice && S.extra && S.pos === 0 && P.kanSleep === today() ? 'ふっかつ！ おかわり しょうぶだ！ こんどは まけないぞ！' : practice ? 'れんしゅうだよ。きろくには のこらないから、気楽に かこう！' : isNew ? 'あたらしい字だよ。よみを 見て かいてみよう！' : 'おぼえてるかな？ 思い出して かこう！');
   setKaku();
-  // 前の字の とびだす演出が のこっていたら、消えてから スタート
-  const startClock = () => { if (curView !== viewStudy || c.mode !== 'wait') return; c.mode = 'test'; c.t0 = performance.now(); tick(); };
-  const wait = holdUntil - performance.now();
-  if (wait > 0) { c.mode = 'wait'; $('#padwrap').classList.add('waiting'); setTimeout(() => { const w = $('#padwrap'); if (w) w.classList.remove('waiting'); startClock(); }, wait); }
-  else { c.t0 = performance.now(); tick(); }
+  // カットインは 前の字の 画面で おわっているので、すぐ スタート
+  c.t0 = performance.now(); tick();
 }
 
 function finishSession() {
@@ -1009,6 +1068,11 @@ function viewRecords() {
 }
 
 // ───────── ぶんせき（にがて さがし） ─────────
+const thCache = {};
+/** これまでに 出た字のうち、その セオリーが ポイントの字 */
+function theoryKanji(id) {
+  return Object.keys(P.cards).filter((k) => KD[k] && (thCache[k] !== undefined ? thCache[k] : (thCache[k] = kanjiTip(KD[k].s.map(samplePath)).th || null)) === id);
+}
 function viewAnalysis() {
   const cards = Object.entries(P.cards).filter(([k]) => KD[k]);
   const pct = (ok, n) => (n ? Math.round((ok / n) * 100) : 0);
@@ -1054,13 +1118,17 @@ function viewAnalysis() {
     ${kaku.length ? `<section class="rlist">${kaku.map((g) => row(g, '✍️', g.key)).join('')}</section>` : empty}
     <h3>まちがいの タイプ</h3>
     ${eTotal ? `<section class="card">${eRow('order', 'かきじゅん', '画の じゅんばんが ちがう')}${eRow('rev', 'かく むき', '下から上、右から左 など')}${eRow('shape', '字の かたち', '画の かたちや ばしょが ちがう')}${eRow('time', 'じかんぎれ', '正しく かけたが おそい')}${eRow('giveup', 'おもい出せない', '「わからない」を おした')}</section>` : empty}
+    <h3>たて・よこ 書き順の セオリー</h3>
+    <section class="card thlist">${Object.entries(THEORIES).map(([id, T]) => { const n = (P.theory || {})[id] || 0, ks = theoryKanji(id);
+      return `<div class="throw ${n ? 'miss' : ''}">${theoryFig(id)}<span><b>セオリー${T.no}「${T.name}」</b><small>${T.ex}</small></span><b class="thn">${n ? `✕${n}回` : '—'}</b>${ks.length ? `<button class="btn sm" data-act="drill" data-ks="${ks.join('')}" data-kind="theory">✏️ ${Math.min(ks.length, 8)}字 とっくん</button>` : '<span></span>'}</div>`; }).join('')}
+      <p class="note">✕は、そのセオリーで 書き順を まちがえた回数。「とっくん」は、これまでに 出た字の 中から そのセオリーの 字を えらんで れんしゅうします。</p></section>
     <h3>じかんが かかる字（1画あたり）</h3>
     ${slow.length ? `<section class="wgrid">${slow.map((x) => `<button class="wk" data-act="k" data-k="${x.k}"><span>${x.k}</span><small>${sec(x.avg)}s／${KD[x.k].s.length}画</small></button>`).join('')}</section>` : empty}
   </div>`;
   onAct({
     home: () => go(viewHome),
     k: (el) => showKanji(el.dataset.k, viewAnalysis),
-    drill: (el) => go(viewStudy, { queue: shuffle([...el.dataset.ks]).slice(0, 10), pos: 0, res: [], practice: true, kind: el.dataset.kind || 'rad', back: viewAnalysis }),
+    drill: (el) => go(viewStudy, { queue: shuffle([...el.dataset.ks]).slice(0, el.dataset.kind === 'theory' ? 8 : 10), pos: 0, res: [], practice: true, kind: el.dataset.kind || 'rad', back: viewAnalysis }),
   });
 }
 
@@ -1084,7 +1152,8 @@ function viewSettings() {
         <option value="any" ${DB.pen === 'any' ? 'selected' : ''}>指でも書ける</option></select></label>
       <label class="fld inline">効果音（書く音・合格の音）<select id="sound"><option value="1" ${DB.sound !== false ? 'selected' : ''}>あり</option><option value="0" ${DB.sound !== false ? '' : 'selected'}>なし</option></select></label>
       <label class="fld inline">BGM（音楽）<select id="bgm"><option value="1" ${DB.bgm !== false ? 'selected' : ''}>あり</option><option value="0" ${DB.bgm !== false ? '' : 'selected'}>なし</option></select></label>
-      <p class="note">音が出ないときは、画面をどこか1回タップすると自動で復旧します。プレイ中も右上の 🔊・🎵 で切りかえられます。</p>
+      <div class="row"><button class="btn" data-act="fixsnd">🔧 音を なおす（テストの音が鳴ります）</button></div>
+      <p class="note">音が消えたら：①画面をどこか1回タップ → ②プレイ中なら右上の 🔊 を2回タップ（オフ→オン） → ③ここの「音を なおす」 → ④それでもだめなら、ホーム画面のアプリを上にスワイプして終了し、開き直してください。<br>iPad の音量・消音（コントロールセンターのベル）・Bluetooth イヤホンのつながり先も確認してください。</p>
     </section>
     <section class="card">
       <h3>☁️ クラウド同期（ほかの iPad と記録を共有）</h3>
@@ -1129,6 +1198,7 @@ function viewSettings() {
     home: () => go(viewHome),
     edit: () => go(viewProfileForm, P),
     about: () => go(viewAbout),
+    fixsnd: () => { DB.sound = true; saveLocal(); applyAudio(); resetAudio(); go(viewSettings); },
     del: () => {
       if (!confirm(cloudOn()
         ? `「${P.name}」を この端末の一覧から外します。クラウドの記録は消えません（完全に消せるのは管理者だけです）。よろしいですか？`
@@ -1164,8 +1234,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const HISTORY = [
+  ['1.5.0', '2026-11-22', ['「もっとやる」に ＋10字の ボタンを追加', '書き順の「たて・よこ」を まちがえたら、カン君が セオリー（①まじわったら よこが先 〜 ⑤つらぬく よこは さいご）を 図つきで 説明。ぶんせきに セオリーべつの まちがい回数と とっくんを追加', 'とびだす演出は 前の字の 画面で 出しきり、つぎの字では すぐ 書けるように（演出はタップで とばせる）', 'ランキングに きょう・きのう おぼえた字の ふえた数（いきおい）を表示。★を「★マスター」と表示', 'iPad で 音が消えにくく（画面を とじて もどったときや 電話のあとに 作り直す）。せっていに「音を なおす」']],
   ['1.4.0', '2026-11-16', ['中学の かん字を追加：中1（313字）・中2（284字）・中3（328字）と、高校（常用漢字ののこり 185字）。小3からあわせて 1896字', 'とびだす演出が 消えてから、つぎの字の 時間を 数えはじめるように']],
   ['1.3.3', '2026-11-16', ['新しい字が出る順番を、あいうえお順から 人ごとにちがう ランダムな順に変更', '1回の出題の中でも、ふくしゅうと新しい字をまぜて出すように']],
   ['1.3.2', '2026-11-16', ['カン君が たおれるまでを 早く（ごうかくで1ダメージ、Sランクで2ダメージ）', '「もっとやる」の5字でも カン君が ふっかつして、もう1回 ノックアウトできるように']],

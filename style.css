@@ -372,3 +372,33 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
 .ver { color: #b9b09c; font-size: 12px; margin-top: 18px; }
 
 .padwrap.waiting #pad { opacity: .55; }
+
+/* ── ランキングの いきおい ── */
+.rmom { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #5d574c; }
+.rmom i { font-style: normal; background: rgba(0, 0, 0, .05); border-radius: 99px; padding: 1px 10px; white-space: nowrap; }
+.rmom i b { font-size: 15px; }
+.rmom i.up { background: #e3f6e8; color: #1d7a3a; } .rmom i.none { opacity: .6; }
+.rlegend { font-size: 12px; margin-top: -4px; }
+
+/* ── おかわりの カットイン待ち ── */
+.btn.held { opacity: .55; position: relative; overflow: hidden; }
+.btn.held::after { content: ""; position: absolute; left: 0; bottom: 0; height: 4px; width: 100%; background: rgba(255, 255, 255, .8); transform-origin: left; animation: heldbar 2.4s linear forwards; }
+@keyframes heldbar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.cutin .cutband { pointer-events: auto; }
+
+/* ── 書き順の セオリー ── */
+.theory { display: flex; gap: 10px; align-items: center; }
+.theory > span { min-width: 0; }
+.thname { display: block !important; font-size: 17px !important; color: #c2410c !important; letter-spacing: 0 !important; }
+.thex { display: block; font-size: 13px; color: var(--sub); font-weight: 400; }
+.thfig { width: 64px; height: 64px; flex: none; background: #fffaf0; border: 1.5px solid #e9dcc2; border-radius: 10px; }
+.thfig path { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.thfig .tf0 { stroke: #b9b09c; } .thfig .tf1 { stroke: #ff8a3d; stroke-width: 3.4; } .thfig .tf2 { stroke: #2b7bd6; stroke-width: 3.4; }
+.thfig .tn1 { fill: #ff8a3d; } .thfig .tn2 { fill: #2b7bd6; }
+.thfig .tt { fill: #fff; font-size: 4.2px; font-weight: 900; text-anchor: middle; }
+.kan.theorybox .kanbub { max-width: 34em; }
+.kan.theorybox .thfig { width: 84px; height: 84px; }
+.throw { display: grid; grid-template-columns: 56px 1fr 60px auto; gap: 12px; align-items: center; margin: 8px 0; }
+.throw .thfig { width: 56px; height: 56px; }
+.throw span b { display: block; } .throw span small { color: var(--sub); }
+.throw.miss .thn { color: var(--ng); } .thn { text-align: right; }

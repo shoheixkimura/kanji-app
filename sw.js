@@ -1,5 +1,5 @@
 // オフラインでも動くように。ネット優先（毎回サーバーに新しい版がないか確かめる）・だめならキャッシュ。
-const CACHE = 'kanji-v14';
+const CACHE = 'kanji-v15';
 const FILES = ['./', 'index.html', 'style.css', 'js/app.js', 'js/matcher.js', 'js/audio.js', 'js/tips.js', 'js/kan.js', 'js/cloud.js', 'js/cloud-config.js', 'data/g3.json', 'data/g4.json', 'data/g5.json', 'data/g6.json', 'data/g7.json', 'data/g8.json', 'data/g9.json', 'data/g10.json', 'manifest.webmanifest', 'icon-180.png', 'icon.svg'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));

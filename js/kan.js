@@ -87,11 +87,12 @@ export function kanSvg(mood = 'normal', dmg = 0) {
 export function kanSay(text, mood = 'normal', cls = '', dmg = 0) {
   return `<div class="kan ${cls}"><div class="kanchar">${kanSvg(mood, dmg)}</div><div class="kanbub"><b>カン君</b><span>${text}</span></div></div>`;
 }
-/** 画面に大きく とびだす カン君（すごいことが おきたとき） */
+/** 画面に大きく とびだす カン君（すごいことが おきたとき）。消すのは よんだ側（タップで とばせる） */
 export function kanCutIn(text, mood = 'wow') {
   const el = document.createElement('div');
   el.className = 'cutin cut-' + mood;
   el.innerHTML = `<div class="cutband"><div class="cutkan">${kanSvg(mood)}</div><div class="cuttext">${text}</div></div>`;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2300);
+  setTimeout(() => el.remove(), 4000); // ねんのため
+  return el;
 }
