@@ -666,11 +666,14 @@ function viewStudy(ctx) {
       : `<b class="thname">セオリー${T.no}「${T.name}」</b>${T.text}<small class="thex">おなじ なかま：${T.ex}</small>`;
     $('#kanbox').innerHTML = kanSay(`<span class="theory">${theoryFig(id)}<span>${c.idx + 1}画目、ちがうよ！<br>${body}</span></span>`, 'think', 'sm theorybox');
     warned = false; // つぎの画を 正しく 書いても、説明は のこしておく
+    reveal('#kanbox');
   };
   const setMsg = (t, cls = '') => {
     if (!t) { if (warned) { warned = false; say('そう、その ちょうし！', 'happy'); } return; }
     warned = cls === 'warn'; say(esc(t), warned ? 'sad' : 'normal');
   };
+  // スマホなど 上の段が 入りきらないとき、だいじな ところ（けっか・せつめい）が 見えるように スクロール
+  const reveal = (sel) => { const pr = $('.prompt'), el = $(sel); if (pr && el && pr.scrollHeight > pr.clientHeight + 2) el.scrollIntoView({ block: 'nearest' }); };
   const setKaku = () => { $('#kaku').textContent = `${Math.min(c.idx + 1, D.s.length)}画目 ／ ${D.s.length}画`; };
 
   // タイマー
@@ -899,6 +902,7 @@ function viewStudy(ctx) {
       startTrace(`<div class="res ng"><b>もういっぽ！</b><span>${why}</span><small>${practice ? '' : 'あした もういちど 出るよ'}</small></div>`);
     }
     save();
+    reveal('#result');
     popups = popups.concat(checkTrophies({ ev: events }));
     if (popups.length) setTimeout(() => showTrophies(popups), 600);
   }
@@ -912,6 +916,7 @@ function viewStudy(ctx) {
     warned = false;
     say(`${c.gaveUp || c.miss >= 3 ? 'うわーん…でも だいじょうぶ！ ' : ''}オレンジの 線を なぞって おぼえよう。<br>💡 ${tip.text}`, c.gaveUp || c.miss >= 3 ? 'cry' : 'think');
     drawModel('trace'); setKaku();
+    reveal('#result');
   }
   function finishTrace() {
     c.mode = 'result';
@@ -1234,8 +1239,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.5.1';
+const VERSION = '1.5.2';
 const HISTORY = [
+  ['1.5.2', '2026-11-23', ['スマホ（iPhone など）で 画面が くずれて「つぎへ」が 見えなくなるのを なおした', 'スマホでは 字を書く わくの 大きさを 画面に あわせ、ボタンが いつも 見えるように。せつめいが 入りきらないときは 上の段だけ スクロール', 'ホーム・ランキング・ずかん などの スマホ向けの ならびを ととのえた']],
   ['1.5.1', '2026-11-23', ['アプリの アイコンを あたらしく（字を ゆびで なぞる デザイン）']],
   ['1.5.0', '2026-11-22', ['「もっとやる」に ＋10字の ボタンを追加', '書き順の「たて・よこ」を まちがえたら、カン君が セオリー（①まじわったら よこが先 〜 ⑤つらぬく よこは さいご）を 図つきで 説明。ぶんせきに セオリーべつの まちがい回数と とっくんを追加', 'とびだす演出は 前の字の 画面で 出しきり、つぎの字では すぐ 書けるように（演出はタップで とばせる）', 'ランキングに きょう・きのう おぼえた字の ふえた数（いきおい）を表示。★を「★マスター」と表示', 'iPad で 音が消えにくく（画面を とじて もどったときや 電話のあとに 作り直す）。せっていに「音を なおす」']],
   ['1.4.0', '2026-11-16', ['中学の かん字を追加：中1（313字）・中2（284字）・中3（328字）と、高校（常用漢字ののこり 185字）。小3からあわせて 1896字', 'とびだす演出が 消えてから、つぎの字の 時間を 数えはじめるように']],

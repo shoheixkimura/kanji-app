@@ -402,3 +402,96 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
 .throw .thfig { width: 56px; height: 56px; }
 .throw span b { display: block; } .throw span small { color: var(--sub); }
 .throw.miss .thn { color: var(--ng); } .thn { text-align: right; }
+
+/* ── 書き取り：入りきらないときは 上の段だけ スクロールし、ボタンは いつも見える ── */
+.prompt { overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 80px; }
+.sbtns { position: sticky; bottom: 0; background: var(--bg); padding: 4px 0; z-index: 1; }
+.sbar .dots { flex-wrap: nowrap; min-width: 0; }
+.sbar .dots i { min-width: 3px; }
+.cnt { white-space: nowrap; }
+@media (orientation: portrait) {
+  .prompt { justify-content: flex-start; }
+  .prompt > .timer { margin-top: auto; } /* 入りきるときは まん中に */
+  .prompt > :last-child { margin-bottom: auto; }
+  /* 字を書く わくは、上の段（よみ・ボタンなど）の ぶんを のこした 大きさ */
+  .padwrap { width: min(100%, 56dvh, calc(100dvh - 330px)); min-width: 200px; }
+}
+
+/* ── スマホ（はば 600px まで） ── */
+@media (max-width: 600px) {
+  body { font-size: 16px; }
+  .page { padding-left: 14px; padding-right: 14px; }
+  .btn.huge { font-size: 26px; padding: 16px 44px; }
+  .btn.big { font-size: 20px; padding: 10px 30px; }
+  .logo { font-size: 34px; margin-top: 2vh; }
+  /* ホーム */
+  .top { flex-wrap: wrap; }
+  .who { font-size: 20px; padding: 4px 14px 4px 8px; white-space: nowrap; }
+  .who span { font-size: 30px; }
+  .chips { flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 4px 10px; font-size: 14px; white-space: nowrap; }
+  .wallet { flex-wrap: wrap; padding: 10px 16px; gap: 6px; }
+  .wallet b { font-size: 30px; white-space: nowrap; }
+  .wallet .wtitle { white-space: nowrap; }
+  .hero { padding: 18px 12px; gap: 14px; border-radius: 22px; }
+  .todo { font-size: 22px; } .todo b { font-size: 46px; }
+  .week { gap: 4px; } .wd b { font-size: 20px; }
+  .navs { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .btn.nav { font-size: 24px; padding: 10px 6px; }
+  .btn.nav span { font-size: 15px; white-space: nowrap; }
+  .kan .kanchar { width: 64px; }
+  .kanbub { font-size: 15px; padding: 8px 12px; }
+  /* 書き取り */
+  .study { padding-left: 8px; padding-right: 8px; }
+  .sbar { gap: 6px; height: 40px; }
+  .sbar .x { width: 36px; height: 36px; font-size: 18px; flex: none; }
+  .pchip { padding: 2px 8px; font-size: 14px; max-width: 30vw; overflow: hidden; text-overflow: ellipsis; }
+  .snd { width: 34px; height: 34px; font-size: 16px; flex: none; }
+  .combo { font-size: 13px; padding: 1px 8px; white-space: nowrap; } .combo:not(.on) { display: none; }
+  #tnum { font-size: 22px; }
+  .tbar { height: 12px; }
+  .yomi { font-size: 28px; }
+  .exs { font-size: 24px; gap: 2px 16px; }
+  .kan.sm .kanchar { width: 42px; }
+  .kan.sm .kanbub { font-size: 14px; padding: 6px 10px; margin-bottom: 8px; line-height: 1.4; }
+  .res { padding: 6px 10px; border-radius: 16px; }
+  .res b { font-size: 22px; } .res span { font-size: 16px; } .res small { font-size: 13px; }
+  .sbtns { flex-wrap: wrap; gap: 4px 6px; }
+  .btn.sm { padding: 6px 12px; font-size: 14px; white-space: nowrap; }
+  .sbtns .btn.ghost { padding: 6px 8px; font-size: 14px; white-space: nowrap; }
+  .tools { display: flex; gap: 6px; }
+  .thfig, .kan.theorybox .thfig { width: 52px; height: 52px; }
+  .thname { font-size: 15px !important; }
+  #stamp .rankstamp { width: 84px; min-width: 0; font-size: 48px; border-width: 4px; }
+  /* そのほか */
+  .sumrow { gap: 16px; } .sumrow b { font-size: 34px; }
+  .zhead { gap: 12px; }
+  .tabs { flex-wrap: wrap; }
+  .kcard { flex-direction: column; padding: 16px; gap: 12px; max-height: 92dvh; overflow-y: auto; }
+  .kcard .kanim { width: min(60vw, 240px); }
+  .rrow { grid-template-columns: 40px minmax(0, 1fr) 1fr 44px; gap: 8px; padding: 8px 10px; }
+  .rrow > small { display: none; }
+  .erow { grid-template-columns: minmax(110px, 1fr) 1.2fr 50px; gap: 8px; }
+  .throw { grid-template-columns: 48px 1fr auto; } .throw .thn { display: none; }
+  .throw .thfig { width: 48px; height: 48px; }
+  .rank { gap: 8px; padding: 10px 12px; } .rank.r1 { padding: 12px; }
+  .rname { font-size: 19px; } .rnum b { font-size: 30px; }
+  .rno b { font-size: 30px; } .rank.r1 .rno b { font-size: 38px; }
+  .rmom { gap: 4px; font-size: 12px; flex-wrap: wrap; } .rmom i { padding: 0 6px; } .rmom i b { font-size: 13px; }
+  .cutkan { width: 28vw; } .cuttext { font-size: 26px; }
+}
+/* 横向きの スマホ（たかさが ひくい） */
+@media (orientation: landscape) and (max-height: 500px) {
+  .study { padding-top: calc(4px + env(safe-area-inset-top)); padding-bottom: calc(4px + env(safe-area-inset-bottom)); padding-left: calc(8px + env(safe-area-inset-left)); padding-right: calc(8px + env(safe-area-inset-right)); }
+  .sbar { height: 36px; gap: 8px; }
+  .sbar .x, .snd { width: 32px; height: 32px; font-size: 15px; }
+  .smain { gap: 10px; }
+  .prompt { gap: 4px; }
+  .yomi { font-size: 26px; } .exs { font-size: 22px; } #tnum { font-size: 20px; }
+  .kan.sm .kanchar { width: 40px; } .kan.sm .kanbub { font-size: 13px; padding: 5px 9px; margin-bottom: 6px; }
+  .res { padding: 4px 10px; } .res b { font-size: 20px; } .res span { font-size: 15px; }
+  .btn.big { font-size: 18px; padding: 8px 26px; } .btn.sm { padding: 5px 10px; font-size: 13px; }
+  .sbtns { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+  .padwrap { height: min(100%, 60vw); }
+  #stamp .rankstamp { width: 70px; min-width: 0; font-size: 40px; }
+}
