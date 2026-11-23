@@ -127,6 +127,13 @@ function buildExtra(p, n = 5) {
       .sort((a, b) => (p.cards[a].due < p.cards[b].due ? -1 : 1));
     q = q.concat(soon.slice(0, n - q.length));
   }
+  // それでも たりなければ、きょう もう書いた字から（きょう ✕だった字 → 書いてから 時間が たった字）
+  if (q.length < n) {
+    const t = today(), lastOk = (k) => { const h = p.cards[k].h.filter((x) => x[0] === t); return h.length ? h[h.length - 1][1] : 1; };
+    const again = pool(p).filter((k) => p.cards[k] && done.has(k) && !q.includes(k))
+      .sort((a, b) => lastOk(a) - lastOk(b) || p.cards[a].h.length - p.cards[b].h.length);
+    q = q.concat(again.slice(0, n - q.length));
+  }
   return shuffle(q);
 }
 function record(k, ok, ms, miss) {
@@ -583,7 +590,7 @@ function viewHome() {
     switch: () => go(viewProfiles),
     start: () => begin(buildQueue(P)),
     resume: () => go(viewStudy),
-    more: (el) => { const q = buildExtra(P, +el.dataset.n || 5); if (q.length) begin(q, true); else alert('れんしゅうできる字が ありません'); },
+    more: (el) => { const q = buildExtra(P, +el.dataset.n || 5); if (q.length) begin(q, true); else alert('えらんでいる 学年に 字が ありません。「せってい → 名前・学年を変える」で 学年を えらんでください。'); },
     zukan: () => go(viewZukan),
     rec: () => go(viewRecords),
     ana: () => go(viewAnalysis),
@@ -1239,8 +1246,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.5.2';
+const VERSION = '1.5.3';
 const HISTORY = [
+  ['1.5.3', '2026-11-23', ['学年の字を ぜんぶ きょう書いたあとでも「もっとやる」が つづけられるように（きょう ✕だった字から もう一度）']],
   ['1.5.2', '2026-11-23', ['スマホ（iPhone など）で 画面が くずれて「つぎへ」が 見えなくなるのを なおした', 'スマホでは 字を書く わくの 大きさを 画面に あわせ、ボタンが いつも 見えるように。せつめいが 入りきらないときは 上の段だけ スクロール', 'ホーム・ランキング・ずかん などの スマホ向けの ならびを ととのえた']],
   ['1.5.1', '2026-11-23', ['アプリの アイコンを あたらしく（字を ゆびで なぞる デザイン）']],
   ['1.5.0', '2026-11-22', ['「もっとやる」に ＋10字の ボタンを追加', '書き順の「たて・よこ」を まちがえたら、カン君が セオリー（①まじわったら よこが先 〜 ⑤つらぬく よこは さいご）を 図つきで 説明。ぶんせきに セオリーべつの まちがい回数と とっくんを追加', 'とびだす演出は 前の字の 画面で 出しきり、つぎの字では すぐ 書けるように（演出はタップで とばせる）', 'ランキングに きょう・きのう おぼえた字の ふえた数（いきおい）を表示。★を「★マスター」と表示', 'iPad で 音が消えにくく（画面を とじて もどったときや 電話のあとに 作り直す）。せっていに「音を なおす」']],
