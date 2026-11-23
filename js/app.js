@@ -1,4 +1,5 @@
 import { samplePath, judge, pathLen } from './matcher.js';
+import { freeJudge } from './freejudge.js';
 import { tone, audioCfg, setBgm, refreshBgm, resetAudio } from './audio.js';
 import { kanjiTip, mistakeTip, theoryOf, theoryFig, THEORIES } from './tips.js';
 import { kanSay, kanCutIn } from './kan.js';
@@ -86,6 +87,10 @@ async function loadData() {
 }
 
 // ───────── 学習ロジック（忘却曲線） ─────────
+/** 中学以上の字は「あとで採点」（書き順を まちがえても さいごまで 書ける） */
+const isFree = (k) => !!KD[k] && KD[k].g >= 7;
+/** 小学校の字を 先に、中学以上の字を あとに（採点のしかたが 1回の出題で 何度も 入れかわらないように） */
+const byMode = (q) => q.filter((k) => !isFree(k)).concat(q.filter(isFree));
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
@@ -115,7 +120,7 @@ function freshList(p) { return [...p.grades].sort(byNum).flatMap((g) => gradeOrd
 function buildQueue(p) {
   const n = p.daily, due = dueList(p), fresh = freshList(p);
   const nNew = Math.min(fresh.length, Math.max(n - due.length, Math.min(2, n)));
-  return shuffle(due.slice(0, n - nNew).concat(fresh.slice(0, nNew)));
+  return byMode(shuffle(due.slice(0, n - nNew).concat(fresh.slice(0, nNew))));
 }
 /** 「もっとやる」：新しい字 → 残りの復習 → 近日中に復習予定の字 */
 function buildExtra(p, n = 5) {
@@ -134,16 +139,18 @@ function buildExtra(p, n = 5) {
       .sort((a, b) => lastOk(a) - lastOk(b) || p.cards[a].h.length - p.cards[b].h.length);
     q = q.concat(again.slice(0, n - q.length));
   }
-  return shuffle(q);
+  return byMode(shuffle(q));
 }
-function record(k, ok, ms, miss) {
+/** flaw=true：中学以上の字で、形は 合っているが 書き順・向きが ちがう 合格 */
+function record(k, ok, ms, miss, flaw = false) {
   const t = today();
   const c = P.cards[k] || (P.cards[k] = { lv: 0, due: t, n: 0, okc: 0, best: null, h: [] });
   c.n++;
   let iv = 1;
   if (ok) {
     iv = INTERVALS[Math.min(c.lv, INTERVALS.length - 1)];
-    c.lv++; c.okc++;
+    c.lv = flaw ? Math.max(c.lv, Math.min(c.lv + 1, MASTER_LV - 1)) : c.lv + 1; // ★マスターは 書き順も かんぺきな ときだけ
+    c.okc++;
     if (c.best == null || ms < c.best) c.best = ms;
   } else {
     c.lv = 0; // 不合格 → 翌日もう一度、間隔は最初から
@@ -619,7 +626,8 @@ function viewStudy(ctx) {
   const tip = kanjiTip(targets);
   const limitMs = P.limit * 1000;
   const isNew = !P.cards[k];
-  const c = { mode: 'test', idx: 0, miss: 0, missHere: 0, hinted: false, gaveUp: false, erased: false, drift: [0, 0], nAcc: 0, t0: 0, ms: 0, raf: 0 };
+  const free = isFree(k); // 中学以上の字：さいごに まとめて 採点
+  const c = { wrote: [], mode: 'test', idx: 0, miss: 0, missHere: 0, hinted: false, gaveUp: false, erased: false, drift: [0, 0], nAcc: 0, t0: 0, ms: 0, raf: 0 };
   const tools = `<div class="tools"><button class="btn sm" data-act="undo">↩ 1画もどす</button><button class="btn sm" data-act="clear">🧽 ぜんぶけす</button></div>`;
 
   app.innerHTML = `<div class="study">
@@ -630,13 +638,13 @@ function viewStudy(ctx) {
       <div class="cnt">${S.pos + 1} / ${S.queue.length}</div></header>
     <div class="smain">
       <section class="prompt">
-        <div class="tag">${practice ? '✏️ れんしゅう（きろくには のこりません）' : isNew ? '🆕 あたらしい字' : '🔁 ふくしゅう'}　${gname(D.g)}</div>
+        <div class="tag">${practice ? '✏️ れんしゅう（きろくには のこりません）' : isNew ? '🆕 あたらしい字' : '🔁 ふくしゅう'}　${gname(D.g)}${free ? '　📝 さいごに まとめて 採点' : ''}</div>
         <div class="timer"><div class="tbar"><i id="tfill"></i></div><span id="tnum">0.0</span><small>びょう</small></div>
         <div class="yomi">${esc(D.y)}</div>
         <ul class="exs" id="exs">${D.ex.map(([w, r]) => `<li><ruby>${esc(maskWord(w, k))}<rt>${esc(r)}</rt></ruby></li>`).join('')}</ul>
         <div id="kanbox"></div>
         <div id="result"></div>
-        <div class="sbtns" id="sbtns">${tools}<button class="btn ghost" data-act="giveup">わからない</button></div>
+        <div class="sbtns" id="sbtns">${tools}${free ? '<button class="btn sm fin" data-act="fin">✅ かけた</button>' : ''}<button class="btn ghost" data-act="giveup">わからない</button></div>
       </section>
       <section class="padwrap" id="padwrap">
         <svg id="pad" viewBox="0 0 109 109">
@@ -667,11 +675,11 @@ function viewStudy(ctx) {
     cutDone = () => { if (b.isConnected) b.classList.remove('held'); };
   };
   // まちがえた セオリーの 説明（同じ セオリーで 3回目からは みじかく）
-  const sayTheory = (id) => {
+  const sayTheory = (id, no = c.idx + 1) => {
     const T = THEORIES[id], n = (P.theory && P.theory[id]) || 0;
     const body = n >= 3 ? `また セオリー${T.no}！ <b class="thname">「${T.name}」</b>おぼえてる？`
       : `<b class="thname">セオリー${T.no}「${T.name}」</b>${T.text}<small class="thex">おなじ なかま：${T.ex}</small>`;
-    $('#kanbox').innerHTML = kanSay(`<span class="theory">${theoryFig(id)}<span>${c.idx + 1}画目、ちがうよ！<br>${body}</span></span>`, 'think', 'sm theorybox');
+    $('#kanbox').innerHTML = kanSay(`<span class="theory">${theoryFig(id)}<span>${no}画目、ちがうよ！<br>${body}</span></span>`, 'think', 'sm theorybox');
     warned = false; // つぎの画を 正しく 書いても、説明は のこしておく
     reveal('#kanbox');
   };
@@ -681,7 +689,7 @@ function viewStudy(ctx) {
   };
   // スマホなど 上の段が 入りきらないとき、だいじな ところ（けっか・せつめい）が 見えるように スクロール
   const reveal = (sel) => { const pr = $('.prompt'), el = $(sel); if (pr && el && pr.scrollHeight > pr.clientHeight + 2) el.scrollIntoView({ block: 'nearest' }); };
-  const setKaku = () => { $('#kaku').textContent = `${Math.min(c.idx + 1, D.s.length)}画目 ／ ${D.s.length}画`; };
+  const setKaku = () => { $('#kaku').textContent = free && c.mode === 'test' ? `${c.idx}画 かいた ／ ${D.s.length}画` : `${Math.min(c.idx + 1, D.s.length)}画目 ／ ${D.s.length}画`; };
 
   // タイマー
   const tick = () => {
@@ -762,6 +770,15 @@ function viewStudy(ctx) {
 
   function onStroke(pts) {
     if (c.mode === 'result') return;
+    if (free && c.mode === 'test') {
+      if (pts.length < 2 || pathLen(pts) < 1.2) return; // タップしただけ
+      c.wrote.push(pts); c.idx++;
+      gInk.appendChild(inkEl(pts, 'good'));
+      SND.stroke(c.idx - 1);
+      setKaku();
+      if (c.idx >= D.s.length) finishTest(); // 画数ぶん 書いたら 採点
+      return;
+    }
     const tgt = targets[c.idx], trace = c.mode === 'trace';
     if (tgt.len >= 12 && pathLen(pts) < 2.5) return; // うっかり触れただけ
     const r = judge(pts, tgt, c.drift, trace);
@@ -803,6 +820,7 @@ function viewStudy(ctx) {
   function erase(all) {
     if (c.mode === 'result' || c.idx === 0) return;
     do { const g = gInk.lastElementChild; if (g) g.remove(); c.idx--; } while (all && c.idx > 0);
+    c.wrote.length = c.mode === 'test' ? c.idx : 0;
     c.missHere = 0;
     if (all) { c.drift = [0, 0]; c.nAcc = 0; c.erased = true; }
     setMsg('');
@@ -810,6 +828,21 @@ function viewStudy(ctx) {
     setKaku();
   }
 
+  /** 書き順・向きが ちがった画に しるし（オレンジ＝書き順、数字は 正しい 画の 番号／青＝向きが ぎゃく） */
+  function markFlaws(fj) {
+    const inks = [...gInk.children];
+    fj.match.forEach((j, i) => {
+      const el = inks[i]; if (!el) return;
+      const bad = fj.order.includes(i), rv = fj.rev[i];
+      if (!bad && !rv) return;
+      el.classList.add(bad ? 'o-order' : 'o-rev');
+      const p0 = c.wrote[i][0];
+      const x = Math.min(102, Math.max(7, p0[0])), y = Math.min(102, Math.max(7, p0[1]));
+      gFx.appendChild(svgEl('circle', { cx: x, cy: y, r: 5.2, class: bad ? 'ob-order' : 'ob-rev' }));
+      const t = svgEl('text', { x, y: y + 2.4, class: 'ob-t' }); t.textContent = bad ? j + 1 : '↩';
+      gFx.appendChild(t);
+    });
+  }
   function revealWords() {
     $('#exs').innerHTML = D.ex.map(([w, r]) => `<li><ruby>${esc(w).split(k).join(`<em>${k}</em>`)}<rt>${esc(r)}</rt></ruby></li>`).join('');
   }
@@ -819,7 +852,10 @@ function viewStudy(ctx) {
     c.ms = Math.round(performance.now() - c.t0);
     c.mode = 'result';
     const inTime = c.ms <= limitMs, n = D.s.length;
-    const ok = !c.gaveUp && c.miss === 0 && !c.hinted && inTime;
+    // 中学以上：書いた画を まとめて 採点。画数ちがい・形ちがいは 不合格、書き順・向きの まちがいは「合格（△）」
+    const fj = free && !c.gaveUp ? freeJudge(c.wrote, targets) : null;
+    const flaws = fj && fj.shapeOk ? fj.order.length + fj.reversed.filter((i) => !fj.order.includes(i)).length : 0;
+    const ok = !c.gaveUp && c.miss === 0 && !c.hinted && inTime && (!fj || fj.shapeOk);
     $('#tnum').textContent = sec(c.ms);
     const prev = P.cards[k];
     const prevBest = prev ? prev.best : null, prevFails = prev ? prev.h.filter((h) => !h[1]).length : 0;
@@ -828,20 +864,24 @@ function viewStudy(ctx) {
     const events = [];
     let iv = 0;
     if (!practice) {
-      iv = record(k, ok, c.ms, c.gaveUp ? -1 : c.miss);
+      iv = record(k, ok, c.ms, c.gaveUp ? -1 : fj ? flaws : c.miss, flaws > 0);
       P.err = P.err || {};
       if (c.gaveUp) P.err.giveup = (P.err.giveup || 0) + 1;
+      else if (fj && !fj.shapeOk) P.err.shape = (P.err.shape || 0) + 1;
       else if (!inTime && c.miss === 0 && !c.hinted) P.err.time = (P.err.time || 0) + 1;
+      if (fj && fj.order.length) P.err.order = (P.err.order || 0) + 1;
+      if (fj && fj.reversed.length) P.err.rev = (P.err.rev || 0) + 1;
     } else if (S.kind === 'zukan') bump('practice');
-    S.res[S.pos] = { k, ok, ms: c.ms, miss: c.miss, gaveUp: c.gaveUp };
+    S.res[S.pos] = { k, ok, ms: c.ms, miss: fj ? flaws : c.miss, gaveUp: c.gaveUp };
     revealWords();
-    drawModel(c.gaveUp ? 'anim' : 'over');
+    drawModel(c.gaveUp || flaws ? 'anim' : 'over'); // 書き順ちがいは 正しい 書き順を アニメで 見せる
+    if (flaws) markFlaws(fj);
     setMsg('');
     $('#kaku').textContent = `${n}画`;
     const res = $('#result');
     let popups = [];
     if (ok) {
-      const rank = rankOf(c.ms, limitMs);
+      const rank = flaws && rankOf(c.ms, limitMs) === 'S' ? 'A' : rankOf(c.ms, limitMs); // 書き順ちがいは Sランクなし
       S.combo = (S.combo || 0) + 1;
       if (!practice) {
         P.maxCombo = Math.max(P.maxCombo || 0, S.combo);
@@ -856,11 +896,16 @@ function viewStudy(ctx) {
       }
       const newBest = !practice && prevBest != null && c.ms < prevBest;
       if (newBest) { S.bests = (S.bests || 0) + 1; if (S.bests >= 3) events.push('best3'); }
-      const gain = practice ? 10000 : Math.round(n * 10000 * { S: 5, A: 3, B: 2 }[rank] * (1 + Math.min(S.combo - 1, 9) * 0.5));
+      const gain = practice ? 10000 : Math.round(n * 10000 * { S: 5, A: 3, B: 2 }[rank] * (1 + Math.min(S.combo - 1, 9) * 0.5) * (flaws ? 0.5 : 1)); // 書き順ちがいは はんぶん
       S.z = (S.z || 0) + gain;
       addZ(gain);
       const lv = practice ? 0 : P.cards[k].lv;
-      res.innerHTML = `<div class="res ok"><b>◎ ${PRAISE[Math.floor(Math.random() * PRAISE.length)]}</b>
+      const flawTxt = flaws ? [fj.order.length ? `書き順 ${fj.order.length}画` : '', fj.reversed.length ? `向き ${fj.reversed.length}画` : ''].filter(Boolean).join('・') + ' ちがう' : '';
+      res.innerHTML = flaws ? `<div class="res ok flaw"><b>○ ごうかく（書き順 △）</b>
+        <span><i class="rk rk-${rank}">${rank}</i> ${sec(c.ms)}びょう　<em class="flawtxt">${flawTxt}</em></span>
+        <span class="xp">💰 +${fmtZ(gain)}ゼニー（はんぶん）${S.combo >= 2 ? `　🔥${S.combo}コンボ` : ''}</span>
+        <small>${fj.order.length ? 'オレンジの画の 数字が 正しい 書き順。' : ''}${fj.reversed.length ? '青い画は 向きが ぎゃく。' : ''}★マスターは 書き順も かんぺきに なってから${practice ? '' : `　つぎは ${iv}日ご`}</small></div>`
+        : `<div class="res ok"><b>◎ ${PRAISE[Math.floor(Math.random() * PRAISE.length)]}</b>
         <span><i class="rk rk-${rank}">${rank}</i> ${sec(c.ms)}びょう${lv === MASTER_LV ? '　★マスター！' : ''}</span>
         <span class="xp">💰 +${fmtZ(gain)}ゼニー${S.combo >= 2 ? `　🔥${S.combo}コンボ` : ''}</span>
         ${newBest ? `<span class="nb">⏱ じこベスト こうしん！（${sec(prevBest)} → ${sec(c.ms)}）</span>` : ''}
@@ -897,15 +942,25 @@ function viewStudy(ctx) {
       $('#stamp').innerHTML = `<div class="rankstamp rk-${rank}">${rank}</div>`;
       $('#padwrap').classList.add('win');
       const cb = $('#combo'); cb.textContent = `🔥 ${S.combo}コンボ`; cb.classList.toggle('on', S.combo >= 2); cb.classList.add('bump');
-      gInk.querySelectorAll('.good').forEach((el, i) => { el.style.animationDelay = i * 0.03 + 's'; el.classList.add('shine'); });
+      gInk.querySelectorAll('.good:not(.o-order):not(.o-rev)').forEach((el, i) => { el.style.animationDelay = i * 0.03 + 's'; el.classList.add('shine'); });
       rank === 'S' ? SND.great() : SND.pass();
       confetti((rank === 'S' ? 45 : rank === 'A' ? 18 : 6) + (S.combo >= 5 ? 30 : 0) + (lv === MASTER_LV ? 40 : 0));
+      // 書き順ちがいは、カン君が セオリー（なければ 正しい 書き順）を せつめい
+      if (flaws && !ko()) {
+        const th = fj.first ? theoryOf(targets, fj.first.want, fj.first.wrote) : null;
+        if (th) { sayTheory(th, fj.first.want + 1); P.theory = P.theory || {}; P.theory[th] = (P.theory[th] || 0) + 1; }
+        else if (fj.first) say(`ごうかく！ でも ${fj.first.want + 1}画目は、オレンジの「${fj.first.want + 1}」の 画だよ。アニメで 正しい 書き順を たしかめよう！`, 'think');
+        else say('ごうかく！ でも 青い画は かく むきが ぎゃくだよ。アニメで たしかめよう！', 'think');
+      }
       holdNext();
     } else {
       S.combo = 0;
       $('#combo').classList.remove('on');
       SND.fail();
-      const why = c.gaveUp ? 'こたえを 見たよ' : [c.miss ? `まちがい ${c.miss}回` : '', c.hinted && !c.miss ? 'ヒントあり' : '', !inTime ? `じかん ${sec(c.ms)}びょう（${P.limit}びょうまで）` : ''].filter(Boolean).join('・');
+      const why = c.gaveUp ? 'こたえを 見たよ'
+        : fj && !fj.countOk ? `画数が ちがうよ（${n}画の字を ${c.wrote.length}画で かいた）${!inTime ? `・じかん ${sec(c.ms)}びょう` : ''}`
+        : fj && !fj.shapeOk ? `字の かたちが ちがうよ${!inTime ? `・じかん ${sec(c.ms)}びょう` : ''}`
+        : [c.miss ? `まちがい ${c.miss}回` : '', c.hinted && !c.miss ? 'ヒントあり' : '', !inTime ? `じかん ${sec(c.ms)}びょう（${P.limit}びょうまで）` : ''].filter(Boolean).join('・');
       startTrace(`<div class="res ng"><b>もういっぽ！</b><span>${why}</span><small>${practice ? '' : 'あした もういちど 出るよ'}</small></div>`);
     }
     save();
@@ -942,6 +997,7 @@ function viewStudy(ctx) {
   onAct({
     quit: () => (practice ? leave() : go(viewHome)),
     giveup: () => { if (c.mode !== 'test') return; c.gaveUp = true; gInk.innerHTML = ''; finishTest(); },
+    fin: () => { if (c.mode !== 'test' || !free || !c.idx) return; finishTest(); },
     undo: () => erase(false),
     clear: () => erase(true),
     sfx: (el) => { DB.sound = DB.sound === false; applyAudio(); saveLocal(); el.textContent = DB.sound ? '🔊' : '🔇'; el.classList.toggle('off', !DB.sound); if (DB.sound) resetAudio(); },
@@ -960,7 +1016,9 @@ function viewStudy(ctx) {
     },
   });
 
-  say(!practice && S.extra && S.pos === 0 && P.kanSleep === today() ? 'ふっかつ！ おかわり しょうぶだ！ こんどは まけないぞ！' : practice ? 'れんしゅうだよ。きろくには のこらないから、気楽に かこう！' : isNew ? 'あたらしい字だよ。よみを 見て かいてみよう！' : 'おぼえてるかな？ 思い出して かこう！');
+  const firstFree = free && !S.queue.slice(0, S.pos).some(isFree);
+  if (firstFree) say('ここからは 中学の字！ 書き順は さいごに まとめて 採点するよ。まちがえても とまらないから、さいごまで かこう！', 'cool');
+  else say(!practice && S.extra && S.pos === 0 && P.kanSleep === today() ? 'ふっかつ！ おかわり しょうぶだ！ こんどは まけないぞ！' : practice ? 'れんしゅうだよ。きろくには のこらないから、気楽に かこう！' : isNew ? 'あたらしい字だよ。よみを 見て かいてみよう！' : 'おぼえてるかな？ 思い出して かこう！');
   setKaku();
   // カットインは 前の字の 画面で おわっているので、すぐ スタート
   c.t0 = performance.now(); tick();
@@ -1140,7 +1198,7 @@ function viewAnalysis() {
   onAct({
     home: () => go(viewHome),
     k: (el) => showKanji(el.dataset.k, viewAnalysis),
-    drill: (el) => go(viewStudy, { queue: shuffle([...el.dataset.ks]).slice(0, el.dataset.kind === 'theory' ? 8 : 10), pos: 0, res: [], practice: true, kind: el.dataset.kind || 'rad', back: viewAnalysis }),
+    drill: (el) => go(viewStudy, { queue: byMode(shuffle([...el.dataset.ks]).slice(0, el.dataset.kind === 'theory' ? 8 : 10)), pos: 0, res: [], practice: true, kind: el.dataset.kind || 'rad', back: viewAnalysis }),
   });
 }
 
@@ -1246,8 +1304,9 @@ function viewSettings() {
 }
 
 // ───────── バージョン・更新履歴 ─────────
-const VERSION = '1.5.3';
+const VERSION = '1.6.0';
 const HISTORY = [
+  ['1.6.0', '2026-11-23', ['中学以上の字は「さいごに まとめて 採点」に。書き順を まちがえても とまらずに さいごまで 書ける（小学校の字は 今までどおり 1画ずつ）', '書き順・向きだけ ちがうときは「ごうかく（書き順 △）」：Sランクなし・ゼニーはんぶん・★マスターには 数えない。ちがった画に 正しい 番号を 表示し、カン君が セオリーを せつめい', '画数が ちがう・字の かたちが ちがうときは 不合格で、今までどおり なぞり れんしゅうへ', '1回の 出題では 小学校の字を 先に、中学以上の字を あとに 出す']],
   ['1.5.3', '2026-11-23', ['学年の字を ぜんぶ きょう書いたあとでも「もっとやる」が つづけられるように（きょう ✕だった字から もう一度）']],
   ['1.5.2', '2026-11-23', ['スマホ（iPhone など）で 画面が くずれて「つぎへ」が 見えなくなるのを なおした', 'スマホでは 字を書く わくの 大きさを 画面に あわせ、ボタンが いつも 見えるように。せつめいが 入りきらないときは 上の段だけ スクロール', 'ホーム・ランキング・ずかん などの スマホ向けの ならびを ととのえた']],
   ['1.5.1', '2026-11-23', ['アプリの アイコンを あたらしく（字を ゆびで なぞる デザイン）']],

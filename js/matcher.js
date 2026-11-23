@@ -113,3 +113,31 @@ export function judge(raw, tgt, drift = [0, 0], loose = false) {
   if (shapeDiff(u, cu, tgt.pts, tgt.c, true) <= lim) res.reversed = true;
   return res;
 }
+
+/**
+ * 「あとで採点」用：書いた1画が 手本の1画に どれくらい 近いか。
+ * 合わなければ null、合えば { cost（小さいほど近い）, reversed（向きが ぎゃく）, off }
+ * 合う・合わないの きじゅんは judge と おなじ（向きぎゃくも「合う」に ふくめる）
+ */
+export function pairCost(raw, tgt, drift = [0, 0]) {
+  raw = thin(raw);
+  const lenU = pathLen(raw);
+  const u = resample(raw, N);
+  const cu = centroid(u);
+  const off = [cu[0] - tgt.c[0], cu[1] - tgt.c[1]];
+  const offD = Math.hypot(off[0] - drift[0], off[1] - drift[1]);
+  if (tgt.len < 12) return offD <= 20 && lenU <= 34 ? { cost: offD / 20, reversed: false, off } : null;
+  if (offD > 23) return null;
+  if (lenU < 0.4 * tgt.len || lenU > 2.2 * tgt.len + 8) return null;
+  const lim = Math.min(16, Math.max(6, 4 + 0.15 * tgt.len));
+  const fwd = shapeDiff(u, cu, tgt.pts, tgt.c, false);
+  const t0 = tgt.pts[0], t1 = tgt.pts[N - 1];
+  const tv = [t1[0] - t0[0], t1[1] - t0[1]], uv = [u[N - 1][0] - u[0][0], u[N - 1][1] - u[0][1]];
+  const tl = Math.hypot(tv[0], tv[1]), ul = Math.hypot(uv[0], uv[1]);
+  let dirOk = true;
+  if (tl > 6) dirOk = ul > 0 && (tv[0] * uv[0] + tv[1] * uv[1]) / (tl * ul) >= 0.45;
+  if (fwd <= lim && dirOk) return { cost: fwd / lim + offD / 23, reversed: false, off };
+  const rev = shapeDiff(u, cu, tgt.pts, tgt.c, true);
+  if (rev <= lim) return { cost: rev / lim + offD / 23 + 0.3, reversed: true, off };
+  return null;
+}

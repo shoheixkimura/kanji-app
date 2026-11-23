@@ -495,3 +495,14 @@ code { background: #f1eadb; border-radius: 6px; padding: 2px 8px; font-size: 16p
   .padwrap { height: min(100%, 60vw); }
   #stamp .rankstamp { width: 70px; min-width: 0; font-size: 40px; }
 }
+
+/* ── 中学以上の「あとで採点」 ── */
+.ink.o-order { stroke: #ff8a3d; }
+.ink.o-rev { stroke: #2b7bd6; }
+.ob-order { fill: #ff8a3d; stroke: #fff; stroke-width: 1; }
+.ob-rev { fill: #2b7bd6; stroke: #fff; stroke-width: 1; }
+.ob-t { fill: #fff; font-size: 6.4px; font-weight: 900; text-anchor: middle; pointer-events: none; }
+.res.flaw { background: #fff4dc; color: #9a5b00; }
+.res .flawtxt { font-style: normal; color: #c2410c; font-size: .85em; }
+.btn.fin { background: #e4f7ec; border-color: #9bdcab; color: #17794a; }
+.res.flaw b { font-size: 28px; } @media (max-width: 600px) { .res.flaw b { font-size: 20px; } }
